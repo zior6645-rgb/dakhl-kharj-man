@@ -23,6 +23,7 @@ const DEFAULT_CATS: Category[] = [
 const LS_CATS = 'dk-cats';
 const LS_THEME = 'dk-theme';
 const LS_FALLBACK = 'dk-txs-fallback';
+const LS_WIPED = 'dk-txs-wiped';
 
 function loadCats(): Category[] {
   try {
@@ -122,18 +123,39 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const all = await dbGetAll();
-        if (all.length) { setTxs(all.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))); }
-        else {
-          const fb = localStorage.getItem(LS_FALLBACK);
-          if (fb) { const arr = JSON.parse(fb); if (Array.isArray(arr)) setTxs(arr); }
+        const wiped = localStorage.getItem(LS_WIPED) === '1';
+        const fb = localStorage.getItem(LS_FALLBACK);
+        if (wiped) {
+          setTxs([]);
+        } else if (fb) {
+          const arr = JSON.parse(fb);
+          if (Array.isArray(arr)) {
+            setTxs(arr.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
+          } else {
+            throw new Error('Invalid local transaction backup');
+          }
+        } else {
+          const all = await dbGetAll();
+          setTxs(all.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
+          try { localStorage.setItem(LS_FALLBACK, JSON.stringify(all)); } catch { /* storage may be unavailable */ }
         }
       } catch {
-        try { const fb = localStorage.getItem(LS_FALLBACK); if (fb) setTxs(JSON.parse(fb)); } catch { /* */ }
-      } finally { setLoading(false); }
+        try {
+          const fb = localStorage.getItem(LS_FALLBACK);
+          if (fb) {
+            const arr = JSON.parse(fb);
+            if (Array.isArray(arr)) setTxs(arr);
+          }
+        } catch { /* keep empty state */ }
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
-  useEffect(() => { try { localStorage.setItem(LS_FALLBACK, JSON.stringify(txs)); } catch { /* */ } }, [txs]);
+  useEffect(() => {
+    if (loading) return;
+    try { localStorage.setItem(LS_FALLBACK, JSON.stringify(txs)); } catch { /* storage may be unavailable */ }
+  }, [txs, loading]);
 
   const totals = useMemo(() => calcTotals(txs), [txs]);
   const mk = todayStr().slice(0, 7);
@@ -192,18 +214,25 @@ export default function App() {
   const maxRep = Math.max(1, ...repTrend.flatMap(x => [x.income, x.expense]));
   const customRangeError = period === 'custom' && cFrom > cTo ? 'تاریخ شروع نباید بعد از تاریخ پایان باشد.' : '';
 
+  function setLocalTransactions(next: Transaction[]) {
+    localStorage.removeItem(LS_WIPED);
+    try { localStorage.setItem(LS_FALLBACK, JSON.stringify(next)); } catch { /* state still remains in memory */ }
+    setTxs(next);
+  }
+
   async function persistAdd(t: Transaction, isEdit: boolean) {
+    const rest = isEdit ? txs.filter(x => x.id !== t.id) : txs;
+    const next = [t, ...rest].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    setLocalTransactions(next);
     let dbSaved = true;
     try { await dbPut(t); } catch { dbSaved = false; }
-    setTxs(prev => {
-      const rest = isEdit ? prev.filter(x => x.id !== t.id) : prev;
-      return [t, ...rest].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-    });
     if (!dbSaved) say('تراکنش در پشتیبان محلی ذخیره شد؛ پایگاه داده دستگاه در دسترس نبود.');
   }
+
   async function removeTx(id: string) {
-    try { await dbDel(id); } catch { /* */ }
-    setTxs(prev => prev.filter(x => x.id !== id));
+    const next = txs.filter(x => x.id !== id);
+    setLocalTransactions(next);
+    try { await dbDel(id); } catch { /* local state remains authoritative */ }
     setConfirmId(null);
     say('تراکنش حذف شد.');
   }
@@ -239,9 +268,17 @@ export default function App() {
         updatedAt: t.updatedAt || now,
         description: t.description || '',
       }));
-      await dbBulkPut(list);
-      setTxs([...list].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
+      const sorted = [...list].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+      localStorage.removeItem(LS_WIPED);
+      localStorage.setItem(LS_FALLBACK, JSON.stringify(sorted));
+      setTxs(sorted);
       if (incomingCats && Array.isArray(incomingCats) && incomingCats.length) setCats(incomingCats);
+      try {
+        await dbBulkPut(sorted);
+      } catch {
+        say('اطلاعات در پشتیبان محلی بازیابی شد؛ پایگاه داده دستگاه در دسترس نبود.');
+        return;
+      }
       say('بازیابی با موفقیت انجام شد.');
     } catch { say('فایل خراب است و اطلاعات فعلی حفظ شد.'); }
   }
@@ -264,17 +301,18 @@ export default function App() {
   }
 
   async function wipeAll() {
+    localStorage.setItem(LS_WIPED, '1');
+    localStorage.removeItem(LS_FALLBACK);
+    localStorage.removeItem(LS_CATS);
+    setTxs([]);
+    setCats(DEFAULT_CATS);
+    setWipeStep(0);
     try {
       await dbClear();
-      localStorage.removeItem(LS_FALLBACK);
-      localStorage.removeItem(LS_CATS);
-      setTxs([]);
-      setCats(DEFAULT_CATS);
-      setWipeStep(0);
-      say('همه تراکنش‌ها و دسته‌های سفارشی حذف شد.');
     } catch {
-      say('حذف اطلاعات انجام نشد؛ اطلاعات فعلی حفظ شد.');
+      /* The tombstone keeps stale IndexedDB data from returning on next launch. */
     }
+    say('همه تراکنش‌ها و دسته‌های سفارشی حذف شد.');
   }
 
   if (loading) return <div className="wrap"><div className="empty">در حال بارگذاری…</div></div>;
