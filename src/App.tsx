@@ -125,6 +125,7 @@ export default function App() {
 
   const lang = settings.language;
   const locale = localeForLanguage(lang);
+  const fontScale: FontScale = settings.fontScale ?? 'default';
 
   const say = (m:string) => { setToast(m); window.setTimeout(() => setToast(''), 2800); };
 
