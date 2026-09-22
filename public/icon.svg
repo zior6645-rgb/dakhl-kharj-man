@@ -1,21 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Finance wallet icon">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#14b8a6"/>
-      <stop offset="1" stop-color="#0f766e"/>
-    </linearGradient>
-    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fef3c7"/>
-      <stop offset="1" stop-color="#f59e0b"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-  <path d="M25 50c0-8 6-14 14-14h44c7 0 12 5 12 12v36c0 7-5 12-12 12H39c-8 0-14-6-14-14V50Z" fill="#fff" opacity=".98"/>
-  <path d="M25 55h57c10 0 18 8 18 18v5H25V55Z" fill="#d9f7f3"/>
-  <rect x="77" y="61" width="26" height="25" rx="9" fill="#fff"/>
-  <circle cx="84" cy="73.5" r="4.5" fill="#0f766e"/>
-  <circle cx="56" cy="45" r="14" fill="url(#coin)" stroke="#fff" stroke-width="3"/>
-  <path d="M44 51 35 60" fill="none" stroke="#86efac" stroke-width="7" stroke-linecap="round"/>
-  <path d="M46 40 55 31l9 7 13-15" fill="none" stroke="#bbf7d0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M77 19v12h-12" fill="none" stroke="#bbf7d0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cashio finance app icon">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#19d3b1"/><stop offset="1" stop-color="#075e58"/></linearGradient>
+  <linearGradient id="wallet" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5eead4"/><stop offset="1" stop-color="#16a99a"/></linearGradient>
+  <linearGradient id="coin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe58a"/><stop offset="1" stop-color="#f5a900"/></linearGradient>
+  <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#001f1b" flood-opacity=".30"/></filter>
+</defs>
+<rect width="512" height="512" rx="112" fill="url(#bg)"/>
+<g filter="url(#shadow)">
+  <rect x="126" y="174" width="270" height="194" rx="48" fill="url(#wallet)"/>
+  <path d="M132 214h235c20 0 36 16 36 36v18H132z" fill="#b9fff3" opacity=".88"/>
+  <rect x="308" y="232" width="104" height="102" rx="32" fill="#23cdb1"/>
+  <circle cx="345" cy="282" r="13" fill="#075e58"/>
+  <rect x="164" y="136" width="180" height="88" rx="28" transform="rotate(8 164 136)" fill="#e9fffb" opacity=".98"/>
+  <rect x="190" y="158" width="134" height="40" rx="14" transform="rotate(8 190 158)" fill="#1dbfa8"/>
+  <circle cx="235" cy="214" r="58" fill="url(#coin)" stroke="#fff" stroke-width="10"/>
+  <path d="M207 214h56M235 186v56" stroke="#9a6500" stroke-width="12" stroke-linecap="round" opacity=".55"/>
+  <path d="M298 144v-56M298 88h62" fill="none" stroke="#d5fff7" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M298 143 334 109 368 126 420 74" fill="none" stroke="#63f4c8" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
 </svg>
