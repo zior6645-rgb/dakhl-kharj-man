@@ -261,11 +261,11 @@ export default function App() {
     setTxs(next);
   }
 
-  async function persistTransaction(t:Transaction,isEdit:boolean) {
-    const rest=isEdit ? txs.filter(x => x.id !== t.id) : txs;
-    const next=[t,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  async function persistTransaction(tx:Transaction,isEdit:boolean) {
+    const rest=isEdit ? txs.filter(x => x.id !== tx.id) : txs;
+    const next=[tx,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
     persistLocal(next);
-    try { await dbPut(t); } catch { say(t(lang,'localFallback')); }
+    try { await dbPut(tx); } catch { say(t(lang,'localFallback')); }
   }
 
   async function removeTx(id:string) {
