@@ -63,8 +63,8 @@ jobs:
       - name: Build Web
         run: npm run build
 
-      - name: Run logic tests
-        run: node tests/logic.test.mjs
+      - name: Run project tests
+        run: npm test
 
       - name: Capacitor sync
         run: npx cap sync android
