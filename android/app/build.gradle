@@ -21,7 +21,11 @@ android {
             def releaseKeyAliasValue = System.getenv("KEY_ALIAS")
             def releaseKeyPassword = System.getenv("KEY_PASSWORD")
             if (releaseKeystoreFile && releaseStorePassword && releaseKeyAliasValue && releaseKeyPassword) {
-                storeFile file(releaseKeystoreFile)
+                def keystore = new File(releaseKeystoreFile)
+                def resolvedKeystore = keystore.isAbsolute()
+                    ? keystore
+                    : rootProject.file("../" + releaseKeystoreFile)
+                storeFile resolvedKeystore
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAliasValue
                 keyPassword releaseKeyPassword
