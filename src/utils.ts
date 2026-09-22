@@ -1,16 +1,17 @@
-export const uid = () => (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+import type { CurrencyCode, Transaction } from './types';
+import { CURRENCY_MAP } from './currencies';
+
+export const uid = () =>
+  (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
 export const nowISO = () => new Date().toISOString();
 
 export function todayStr(d = new Date()): string {
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 }
-
-export const timeStr = (d = new Date()) =>
-  String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-
-const nf = new Intl.NumberFormat('fa-IR');
-export const fmt = (n: number) => nf.format(Math.round(n)) + ' تومان';
-export const fmtNum = (n: number) => nf.format(Math.round(n));
+export const timeStr = (d = new Date()) => String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 
 export function normalizeDigits(value: string): string {
   const fa = '۰۱۲۳۴۵۶۷۸۹';
@@ -18,25 +19,56 @@ export function normalizeDigits(value: string): string {
   return String(value)
     .replace(/[۰-۹]/g, ch => String(fa.indexOf(ch)))
     .replace(/[٠-٩]/g, ch => String(ar.indexOf(ch)))
-    .replace(/[٬,\s]/g, '');
+    .replace(/[٬]/g, ',')
+    .replace(/[٫]/g, '.')
+    .replace(/[،]/g, ',')
+    .replace(/\s+/g, '');
 }
 
-export function parseAmount(value: string): number | null {
-  const normalized = normalizeDigits(value);
-  if (!normalized || !/^\d+$/.test(normalized)) return null;
+export function parseAmount(value: string, currency: CurrencyCode = 'IRT'): number | null {
+  const normalized = normalizeDigits(value).replace(/,/g, '');
+  if (!normalized || !/^\d+(?:\.\d+)?$/.test(normalized)) return null;
   const n = Number(normalized);
-  return Number.isSafeInteger(n) && n > 0 ? n : null;
+  const digits = CURRENCY_MAP[currency].digits;
+  const factor = 10 ** digits;
+  const rounded = Math.round(n * factor) / factor;
+  if (!Number.isFinite(n) || n <= 0 || !Number.isSafeInteger(Math.round(n * factor))) return null;
+  if (Math.abs(rounded - n) > Number.EPSILON * Math.max(1, Math.abs(n))) return null;
+  return rounded;
 }
 
 export function isValidDateString(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [y, m, d] = value.split('-').map(Number);
-  const x = new Date(y, m - 1, d);
+  const [y,m,d] = value.split('-').map(Number);
+  const x = new Date(y,m-1,d);
   return x.getFullYear() === y && x.getMonth() === m - 1 && x.getDate() === d;
 }
 
-export function toCSV(rows: { id: string; type: string; amount: number; title: string; category: string; date: string; time: string; description: string }[]): string {
-  const esc = (s: string | number) => '"' + String(s).replace(/"/g, '""') + '"';
-  const head = 'id,type,amount,title,category,date,time,description';
-  return head + '\n' + rows.map(r => [esc(r.id), esc(r.type), r.amount, esc(r.title), esc(r.category), esc(r.date), esc(r.time), esc(r.description)].join(',')).join('\n');
+export function fmtMoney(amount: number, currency: CurrencyCode, locale: string): string {
+  const info = CURRENCY_MAP[currency];
+  if (currency === 'IRT' || currency === 'IRR') {
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.round(amount)) + ' ' + info.symbol;
+  }
+  return new Intl.NumberFormat(locale, {
+    style:'currency', currency:info.isoCode, currencyDisplay:'symbol',
+    minimumFractionDigits:info.digits, maximumFractionDigits:info.digits
+  }).format(amount);
+}
+
+export function fmtNum(n: number, locale = 'fa-IR', digits = 0): string {
+  return new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
+}
+
+export function displayDate(value: string, locale: string): string {
+  const [y,m,d] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat(locale, { year:'numeric', month:'short', day:'numeric' }).format(new Date(y,m-1,d,12));
+}
+
+export function toCSV(rows: Transaction[]): string {
+  const esc = (s: string | number) => '"' + String(s).replace(/"/g,'""') + '"';
+  const head = 'id,type,amount,currency,title,category,date,time,description,createdAt,updatedAt';
+  return head + '\n' + rows.map(r => [
+    esc(r.id), esc(r.type), String(r.amount), esc(r.currency), esc(r.title), esc(r.category),
+    esc(r.date), esc(r.time), esc(r.description), esc(r.createdAt), esc(r.updatedAt)
+  ].join(',')).join('\n');
 }
