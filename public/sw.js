@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dakhl-kharj-v1';
+const CACHE_NAME = 'dakhl-kharj-v2';
 
 self.addEventListener('install', event => {
   event.waitUntil(
