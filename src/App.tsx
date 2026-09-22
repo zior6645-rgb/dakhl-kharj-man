@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSettings, Category, CurrencyCode, FontScale, HomeInsightId, LanguageCode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
@@ -120,10 +120,7 @@ export default function App() {
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
   const [homeInsight, setHomeInsight] = useState<HomeInsightId>('balance');
-  const [draggingHomeInsight, setDraggingHomeInsight] = useState(false);
-  const homeTrackRef = useRef<HTMLDivElement>(null);
-  const homeIconRefs = useRef<Partial<Record<HomeInsightId, HTMLElement>>>({});
-  const homeDragRef = useRef<{id:HomeInsightId;pointerId:number;startX:number;active:boolean;lastOrder:string}>({id:'balance',pointerId:-1,startX:0,active:false,lastOrder:''});
+  const homeSwipeRef = useRef<{pointerId:number;startX:number;startY:number;active:boolean}>({pointerId:-1,startX:0,startY:0,active:false});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -359,48 +356,28 @@ export default function App() {
     say(t(lang,'allDataDeleted'));
   }
 
-  const stopHomeInsightDrag = (e?: PointerEvent<HTMLButtonElement>) => {
-    const state = homeDragRef.current;
-    if (e && state.pointerId !== e.pointerId) return;
-    if (e) { try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {} }
-    homeDragRef.current = {id:'balance',pointerId:-1,startX:0,active:false,lastOrder:''};
-    setDraggingHomeInsight(false);
+  const HOME_INSIGHTS: HomeInsightId[] = DEFAULT_HOME_INSIGHTS;
+
+  const swipeHomeInsight = (delta:number) => {
+    const current = HOME_INSIGHTS.indexOf(homeInsight);
+    const next = (current + delta + HOME_INSIGHTS.length) % HOME_INSIGHTS.length;
+    setHomeInsight(HOME_INSIGHTS[next]);
   };
 
-  const moveHomeInsight = (e: PointerEvent<HTMLButtonElement>) => {
-    const state = homeDragRef.current;
-    if (state.pointerId !== e.pointerId) return;
-    if (!state.active) {
-      if (Math.abs(e.clientX - state.startX) < 8) return;
-      state.active = true;
-      setDraggingHomeInsight(true);
-    }
-    const track = homeTrackRef.current;
-    if (track) {
-      const r = track.getBoundingClientRect();
-      if (e.clientX < r.left + 24) track.scrollBy({left:-10,behavior:'auto'});
-      else if (e.clientX > r.right - 24) track.scrollBy({left:10,behavior:'auto'});
-    }
-    setSettings(prev => {
-      const remaining = prev.homeInsightOrder.filter(x => x !== state.id);
-      let insertIndex = remaining.length;
-      for (let i=0;i<remaining.length;i++) {
-        const rect = homeIconRefs.current[remaining[i]]?.getBoundingClientRect();
-        if (rect && e.clientX < rect.left + rect.width/2) { insertIndex=i; break; }
-      }
-      const next=[...remaining];
-      next.splice(insertIndex,0,state.id);
-      if (next.join('|') === prev.homeInsightOrder.join('|')) return prev;
-      return {...prev,homeInsightOrder:next};
-    });
-  };
-
-  const startHomeInsightDrag = (id:HomeInsightId,e:PointerEvent<HTMLButtonElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
+  const beginHomeSwipe = (e:React.PointerEvent<HTMLDivElement>) => {
+    homeSwipeRef.current = {pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,active:false};
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    homeDragRef.current={id,pointerId:e.pointerId,startX:e.clientX,active:false,lastOrder:''};
-    setHomeInsight(id);
+  };
+
+  const endHomeSwipe = (e:React.PointerEvent<HTMLDivElement>) => {
+    const state = homeSwipeRef.current;
+    if (state.pointerId !== e.pointerId) return;
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+    homeSwipeRef.current = {pointerId:-1,startX:0,startY:0,active:false};
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    if (Math.abs(dx) < 45 || Math.abs(dx) <= Math.abs(dy)) return;
+    swipeHomeInsight(dx < 0 ? 1 : -1);
   };
 
   const systemCats=cats.filter(c => c.system);
@@ -447,27 +424,27 @@ export default function App() {
         </div>
         <section className="home-insights-section">
           <h2>{t(lang,'homeInsights')}</h2>
-          <div className="muted" style={{marginBottom:8}}>{t(lang,'homeInsightHint')}</div>
-          <div ref={homeTrackRef} className="home-insight-icons" aria-label={t(lang,'homeInsights')}>
-            {settings.homeInsightOrder.map(id => {
-              const icon = id==='balance' ? '◉' : id==='monthIncome' ? '↗' : id==='monthExpense' ? '↘' : '◷';
-              const labelKey = id==='balance'?'balanceCard':id==='monthIncome'?'monthIncomeCard':id==='monthExpense'?'monthExpenseCard':'latestTransactionCard';
-              return <button key={id} ref={el => { if (el) homeIconRefs.current[id]=el; else delete homeIconRefs.current[id]; }}
-                className={'home-insight-icon'+(homeInsight===id?' active':'')+(draggingHomeInsight && homeInsight===id?' dragging':'')}
-                aria-label={t(lang,labelKey)} title={t(lang,labelKey)}
-                onClick={() => setHomeInsight(id)}
-                onPointerDown={e => startHomeInsightDrag(id,e)} onPointerMove={moveHomeInsight}
-                onPointerUp={stopHomeInsightDrag} onPointerCancel={stopHomeInsightDrag}>
-                <span>{icon}</span>
-              </button>;
-            })}
+          <div className="muted home-insight-hint">{t(lang,'homeInsightHint')}</div>
+          <div className="home-insight-carousel">
+            <button type="button" className="home-insight-arrow" aria-label={t(lang,'previousInsight')} onClick={() => swipeHomeInsight(-1)}>‹</button>
+            <article
+              className="home-insight-detail home-insight-swipe"
+              onPointerDown={beginHomeSwipe}
+              onPointerUp={endHomeSwipe}
+              onPointerCancel={endHomeSwipe}
+              onPointerLeave={e => { if (e.currentTarget.hasPointerCapture?.(e.pointerId)) endHomeSwipe(e); }}
+              aria-live="polite"
+            >
+              {homeInsight==='balance' && <><span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+              {homeInsight==='monthIncome' && <><span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+              {homeInsight==='monthExpense' && <><span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+              {homeInsight==='latestTransaction' && <><span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></>}
+              <div className="home-insight-dots" aria-hidden="true">
+                {HOME_INSIGHTS.map(id => <span key={id} className={id===homeInsight?'active':''} />)}
+              </div>
+            </article>
+            <button type="button" className="home-insight-arrow" aria-label={t(lang,'nextInsight')} onClick={() => swipeHomeInsight(1)}>›</button>
           </div>
-          <article className="home-insight-detail">
-            {homeInsight==='balance' && <><span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-            {homeInsight==='monthIncome' && <><span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-            {homeInsight==='monthExpense' && <><span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-            {homeInsight==='latestTransaction' && <><span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></>}
-          </article>
         </section>
         <h2>{t(lang,'last7Days')}</h2>
         <div className="card"><div className="bars">
