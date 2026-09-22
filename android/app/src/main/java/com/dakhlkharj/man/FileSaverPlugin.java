@@ -14,7 +14,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.PluginMethod;
 
 import java.io.OutputStream;
-import java.util.Base64;
+import android.util.Base64;
 
 @CapacitorPlugin(name = "FileSaver")
 public class FileSaverPlugin extends Plugin {
