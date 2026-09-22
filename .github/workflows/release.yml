@@ -17,8 +17,6 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       KEYSTORE_FILE: android/app/release.keystore
       KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
