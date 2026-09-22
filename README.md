@@ -1,43 +1,46 @@
 # دخل‌وخرج من
 
-وب‌اپ واقعی مدیریت درآمد و هزینه — فارسی، راست‌چین، آفلاین.
+وب‌اپ و اپلیکیشن اندروید برای مدیریت شخصی درآمد و هزینه — فارسی، راست‌چین و آفلاین.
 
-## فناوری
-- React + TypeScript + Vite (بدون وابستگی اضافه)
-- ذخیره‌سازی: IndexedDB + پشتیبان localStorage
-- اندروید: Capacitor (پوشه `android/` با یک دستور ساخته می‌شود)
+## وضعیت نهایی
+- نسخه: 1.0.0
+- شناسه اندروید: `com.dakhlkharj.man`
+- ذخیره‌سازی محلی: IndexedDB با پشتیبان localStorage
+- بدون حساب کاربری و بدون سرور اختصاصی
+- ثبت، ویرایش، حذف و جست‌وجوی تراکنش‌ها
+- دسته‌بندی‌های پیش‌فرض و سفارشی
+- گزارش امروز، هفته، ماه، سه‌ماه، سال و بازه دلخواه
+- نمودارهای درآمد و هزینه
+- حالت روشن، تاریک و سیستم
+- پشتیبان‌گیری و بازیابی JSON
+- خروجی CSV در نسخه وب
+- حذف اطلاعات با تأیید دو مرحله‌ای
+- نسخه اندروید با APK و AAB امضاشده
+- صفحه حریم خصوصی: [PRIVACY.md](./PRIVACY.md)
 
-## اجرای نسخه Production (ساخته‌شده)
-مسیر بیلد: `dakhl-kharj-man/dist/`
-```bash
-cd dakhl-kharj-man
-node node_modules/vite/bin/vite.js preview --port 4173
-# باز کردن: http://127.0.0.1:4173/
-```
-یا با هر استاتیک‌سرور:
-```bash
-npx serve dist
-```
+## وب
+نسخه منتشرشده:
+https://zior6645-rgb.github.io/dakhl-kharj-man/
 
 ## توسعه
 ```bash
-cd dakhl-kharj-man
-npm install
+npm ci
 npm run dev
 ```
 
-## تست منطق مالی (سناریوی واقعی)
+## تست
 ```bash
+npm run build
 node tests/logic.test.mjs
 ```
-سناریو: درآمد ۱۰٬۰۰۰٬۰۰۰ − هزینه ۲٬۵۰۰٬۰۰۰ = موجودی ۷٬۵۰۰٬۰۰۰؛ سپس ویرایش، افزودن، حذف، بکاپ/ریستور.
 
-## اندروید (APK)
-فایل `ANDROID-APK-GUIDE.md` را ببینید. خلاصه:
-```bash
-npm i @capacitor/core @capacitor/cli @capacitor/android
-npx cap add android
-npx cap sync
-cd android && ./gradlew assembleDebug
-# خروجی: android/app/build/outputs/apk/debug/app-debug.apk
-```
+## اندروید
+بیلدهای خودکار در GitHub Actions انجام می‌شوند:
+- Debug APK برای تست
+- Release APK برای نصب نهایی
+- Release AAB برای انتشار در فروشگاه‌ها
+
+برای جزئیات بیلد اندروید به [ANDROID-APK-GUIDE.md](./ANDROID-APK-GUIDE.md) مراجعه کنید.
+
+## نکته مهم انتشار
+فایل AAB برای انتشار فروشگاهی مناسب است و APK برای نصب مستقیم و تست کاربرد دارد. کلید امضای Release خارج از مخزن نگهداری می‌شود و نباید داخل Git قرار بگیرد.
