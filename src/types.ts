@@ -1,6 +1,6 @@
 export type TxType = 'income' | 'expense';
 
-export type LanguageCode = 'fa' | 'en' | 'ru' | 'ar' | 'tr' | 'de' | 'fr' | 'es';
+export type LanguageCode = 'fa' | 'en' | 'ru' | 'ar' | 'tr';
 
 export type CurrencyCode =
   | 'IRT' | 'IRR' | 'USD' | 'EUR' | 'GBP' | 'RUB' | 'TRY' | 'AED' | 'SAR'
