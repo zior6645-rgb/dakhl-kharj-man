@@ -1,8 +1,8 @@
 {
   "name": "دخل‌وخرج من",
   "short_name": "دخل‌وخرج من",
-  "start_url": "/dakhl-kharj-man/",
-  "scope": "/dakhl-kharj-man/",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "dir": "rtl",
   "lang": "fa",
@@ -11,7 +11,7 @@
   "description": "مدیریت آفلاین درآمد و هزینه",
   "icons": [
     {
-      "src": "/dakhl-kharj-man/icon.svg",
+      "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
