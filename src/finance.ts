@@ -1,4 +1,5 @@
-import type { Transaction } from './types';
+import type { Category, Transaction } from './types';
+import { isValidDateString, parseAmount, todayStr } from './utils';
 
 export function calcTotals(list: Transaction[]) {
   let income = 0, expense = 0;
@@ -20,9 +21,26 @@ export function groupByDay(list: Transaction[], days: string[]) {
   for (const d of days) map.set(d, { income: 0, expense: 0 });
   for (const t of list) {
     const e = map.get(t.date);
-    if (e) { if (t.type === 'income') e.income += t.amount; else e.expense += t.amount; }
+    if (e) {
+      if (t.type === 'income') e.income += t.amount;
+      else e.expense += t.amount;
+    }
   }
   return days.map(d => ({ date: d, ...(map.get(d) as { income: number; expense: number }) }));
+}
+
+export function groupByMonth(list: Transaction[], months: string[]) {
+  const map = new Map<string, { income: number; expense: number }>();
+  for (const m of months) map.set(m, { income: 0, expense: 0 });
+  for (const t of list) {
+    const key = monthKey(t.date);
+    const e = map.get(key);
+    if (e) {
+      if (t.type === 'income') e.income += t.amount;
+      else e.expense += t.amount;
+    }
+  }
+  return months.map(month => ({ date: month, ...(map.get(month) as { income: number; expense: number }) }));
 }
 
 export function groupByCategory(list: Transaction[], type: 'income' | 'expense') {
@@ -38,31 +56,57 @@ export function topCategory(list: Transaction[]): string {
 
 export function validateTx(input: { type: string; amount: string; title: string; category: string; date: string }): string[] {
   const errs: string[] = [];
-  const amt = Number(String(input.amount).replace(/[,٬۰-۹٠-٩\s]/g, (ch) => {
-    const fa = '۰۱۲۳۴۵۶۷۸۹'; const ar = '٠١٢٣٤٥٦٧٨٩';
-    if (fa.includes(ch)) return String(fa.indexOf(ch));
-    if (ar.includes(ch)) return String(ar.indexOf(ch));
-    return '';
-  }));
+  const amt = parseAmount(input.amount);
   if (!input.amount || String(input.amount).trim() === '') errs.push('مبلغ را وارد کنید.');
-  else if (!Number.isFinite(amt) || amt <= 0 || !Number.isInteger(Math.round(amt))) errs.push('مبلغ نامعتبر است؛ عدد صحیح بزرگ‌تر از صفر وارد کنید.');
+  else if (amt === null) errs.push('مبلغ نامعتبر است؛ فقط عدد صحیح بزرگ‌تر از صفر وارد کنید.');
   if (!input.title || input.title.trim() === '') errs.push('عنوان را وارد کنید.');
+  else if (input.title.trim().length > 120) errs.push('عنوان بیش از حد طولانی است.');
   if (input.type !== 'income' && input.type !== 'expense') errs.push('نوع تراکنش معتبر نیست.');
   if (!input.category || input.category.trim() === '') errs.push('دسته‌بندی را انتخاب کنید.');
-  if (!input.date || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) || isNaN(new Date(input.date).getTime())) errs.push('تاریخ نامعتبر است.');
+  if (!input.date || !isValidDateString(input.date)) errs.push('تاریخ نامعتبر است.');
   return errs;
+}
+
+function validTime(value: unknown): boolean {
+  return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function validCategoryList(value: unknown): value is Category[] {
+  if (!Array.isArray(value)) return false;
+  const ids = new Set<string>();
+  const labels = new Set<string>();
+  for (const item of value) {
+    const c = item as Record<string, unknown>;
+    if (!c || typeof c.id !== 'string' || !c.id || ids.has(c.id)) return false;
+    if (typeof c.label !== 'string' || !c.label.trim() || c.label.length > 80 || labels.has(c.label)) return false;
+    if (c.kind !== 'income' && c.kind !== 'expense' && c.kind !== 'both') return false;
+    ids.add(c.id);
+    labels.add(c.label);
+  }
+  return true;
 }
 
 export function validateBackup(obj: unknown): string | null {
   if (!obj || typeof obj !== 'object') return 'ساختار فایل معتبر نیست.';
   const o = obj as Record<string, unknown>;
+  if (o.version !== undefined && o.version !== 1) return 'نسخه فایل پشتیبان پشتیبانی نمی‌شود.';
   if (!Array.isArray(o.transactions)) return 'فایل پشتیبان تراکنش‌ها را ندارد.';
-  for (const t of o.transactions as unknown[]) {
-    const r = t as Record<string, unknown>;
-    if (!r || typeof r.id !== 'string' || (r.type !== 'income' && r.type !== 'expense')) return 'یک تراکنش در فایل خراب است (نوع).';
-    if (typeof r.amount !== 'number' || !(r.amount > 0)) return 'یک تراکنش در فایل خراب است (مبلغ).';
-    if (typeof r.title !== 'string' || !r.title.trim()) return 'یک تراکنش در فایل خراب است (عنوان).';
-    if (typeof r.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) return 'یک تراکنش در فایل خراب است (تاریخ).';
+  if (o.categories !== undefined && !validCategoryList(o.categories)) return 'دسته‌بندی‌های فایل پشتیبان معتبر نیستند.';
+
+  const ids = new Set<string>();
+  for (const item of o.transactions as unknown[]) {
+    const r = item as Record<string, unknown>;
+    if (!r || typeof r.id !== 'string' || !r.id || ids.has(r.id)) return 'یک تراکنش در فایل خراب است (شناسه).';
+    if (r.type !== 'income' && r.type !== 'expense') return 'یک تراکنش در فایل خراب است (نوع).';
+    if (typeof r.amount !== 'number' || !Number.isSafeInteger(r.amount) || r.amount <= 0) return 'یک تراکنش در فایل خراب است (مبلغ).';
+    if (typeof r.title !== 'string' || !r.title.trim() || r.title.length > 120) return 'یک تراکنش در فایل خراب است (عنوان).';
+    if (typeof r.category !== 'string' || !r.category.trim() || r.category.length > 80) return 'یک تراکنش در فایل خراب است (دسته‌بندی).';
+    if (typeof r.date !== 'string' || !isValidDateString(r.date)) return 'یک تراکنش در فایل خراب است (تاریخ).';
+    if (!validTime(r.time)) return 'یک تراکنش در فایل خراب است (ساعت).';
+    if (typeof r.description !== 'string' || r.description.length > 500) return 'یک تراکنش در فایل خراب است (توضیح).';
+    if (r.createdAt !== undefined && typeof r.createdAt !== 'string') return 'یک تراکنش در فایل خراب است (زمان ایجاد).';
+    if (r.updatedAt !== undefined && typeof r.updatedAt !== 'string') return 'یک تراکنش در فایل خراب است (زمان ویرایش).';
+    ids.add(r.id);
   }
   return null;
 }
@@ -70,8 +114,22 @@ export function validateBackup(obj: unknown): string | null {
 export function lastNDays(n: number, base = new Date()): string[] {
   const out: string[] = [];
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(base); d.setDate(d.getDate() - i);
-    out.push(d.toISOString().slice(0, 10));
+    const d = new Date(base);
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    out.push(todayStr(d));
+  }
+  return out;
+}
+
+export function lastNMonths(n: number, base = new Date()): string[] {
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(base);
+    d.setHours(12, 0, 0, 0);
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    out.push(todayStr(d).slice(0, 7));
   }
   return out;
 }
