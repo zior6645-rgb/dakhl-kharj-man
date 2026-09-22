@@ -62,8 +62,14 @@ assert(androidManifest.includes('android:allowBackup="false"'), 'Android backup 
 assert(androidManifest.includes('android:dataExtractionRules="@xml/backup_rules"'), 'Android 12+ backup rules configured');
 assert(androidManifest.includes('android:fullBackupContent="@xml/backup_rules_legacy"'), 'legacy backup rules configured');
 assert(androidManifest.includes('android:usesCleartextTraffic="false"'), 'cleartext traffic disabled');
-assert(pkg.version==='1.6.0', 'package version is 1.6.0');
-assert(lock.version==='1.6.0' && lock.packages?.['']?.version==='1.6.0', 'lockfile version matches package');
+assert(!androidManifest.includes('android.permission.INTERNET'), 'Android internet permission removed');
+assert(!app.includes('storageMode'), 'cloud storage mode removed from UI logic');
+assert(!app.includes('CloudAuthModal'), 'cloud authentication UI removed');
+assert(!app.includes('supabase'), 'Supabase app integration removed');
+assert(!releaseWorkflow.includes('VITE_SUPABASE_'), 'cloud build secrets removed');
+assert(!fs.existsSync(path.join(ROOT,'src','cloud.ts')), 'cloud source file removed');
+assert(pkg.version==='1.7.0', 'package version is 1.7.0');
+assert(lock.version==='1.7.0' && lock.packages?.['']?.version==='1.7.0', 'lockfile version matches package');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 
 console.log('ALL LOGIC AND SOURCE-INTEGRITY TESTS PASSED');
