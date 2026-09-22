@@ -1,1 +1,11 @@
-{"name":"dakhl-kharj-man","short_name":"dakhl-kharj","start_url":".","display":"standalone","dir":"rtl","lang":"fa","background_color":"#f4f6fb","theme_color":"#0d6efd"}
+{
+  "name": "دخل‌وخرج من",
+  "short_name": "دخل‌وخرج من",
+  "start_url": ".",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "fa",
+  "background_color": "#f4f6fb",
+  "theme_color": "#26A69A",
+  "description": "مدیریت آفلاین درآمد و هزینه"
+}
