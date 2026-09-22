@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import type { AppSettings, Category, CurrencyCode, FontScale, LanguageCode, StorageMode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
@@ -395,22 +396,57 @@ export default function App() {
     say(t(lang,'cloudSignedOut'));
   }
 
-  function exportJSON() {
-    const payload={version:2,exportedAt:nowISO(),settings,categories:cats,transactions:txs};
-    const a=document.createElement('a');
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
-    a.href=URL.createObjectURL(blob); a.download='dakhl-kharj-backup-v2.json'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href),2000);
-    say(t(lang,'backupDownloaded'));
+  async function deliverFile(filename:string, content:string|Blob, mime:string, successKey:'backupReady'|'csvReady') {
+    const blob = content instanceof Blob ? content : new Blob([content],{type:mime});
+
+    if (Capacitor.isNativePlatform()) {
+      const nav = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+        share?: (data?: ShareData) => Promise<void>;
+      };
+      const file = new File([blob],filename,{type:mime});
+      if (typeof nav.share === 'function' && (!nav.canShare || nav.canShare({files:[file]}))) {
+        try {
+          await nav.share({title:filename,files:[file]});
+          say(t(lang,successKey));
+          return;
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            say(t(lang,'fileShareCanceled'));
+          } else {
+            say(t(lang,'fileExportFailed'));
+          }
+          return;
+        }
+      }
+      say(t(lang,'fileExportFailed'));
+      return;
+    }
+
+    try {
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=filename;
+      a.style.display='none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url),1000);
+      say(t(lang,successKey));
+    } catch {
+      say(t(lang,'fileExportFailed'));
+    }
   }
 
-  function exportCSVFile() {
+  async function exportJSON() {
+    const payload={version:2,exportedAt:nowISO(),settings,categories:cats,transactions:txs};
+    await deliverFile('dakhl-kharj-backup-v2.json',JSON.stringify(payload,null,2),'application/json','backupReady');
+  }
+
+  async function exportCSVFile() {
     const rows=txs.map(x => ({...x, category:categoryName(x.category), currency:x.currency}));
-    const blob=new Blob(['\ufeff'+toCSV(rows)],{type:'text/csv;charset=utf-8'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob); a.download='dakhl-kharj.csv'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href),2000);
-    say(t(lang,'csvDownloaded'));
+    await deliverFile('dakhl-kharj.csv','\ufeff'+toCSV(rows),'text/csv;charset=utf-8','csvReady');
   }
 
   async function importFile(file:File) {
