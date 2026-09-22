@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Category, ThemeMode, Transaction, TxType } from './types';
-import { calcTotals, filterByDateRange, groupByCategory, groupByDay, lastNDays, topCategory, validateBackup, validateTx } from './finance';
+import { calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, topCategory, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
-import { fmt, timeStr, todayStr, toCSV, uid } from './utils';
+import { fmt, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
 
 const DEFAULT_CATS: Category[] = [
   { id: 'c1', label: 'حقوق', kind: 'income' },
@@ -45,12 +45,16 @@ type Period = 'today' | 'week' | 'month' | '3m' | 'year' | 'custom';
 
 function periodRange(p: Period, customFrom: string, customTo: string): { from: string; to: string; label: string } {
   const t = todayStr();
-  const d = new Date();
-  const iso = (x: Date) => x.toISOString().slice(0, 10);
+  const local = (days: number) => {
+    const x = new Date();
+    x.setHours(12, 0, 0, 0);
+    x.setDate(x.getDate() + days);
+    return todayStr(x);
+  };
   if (p === 'today') return { from: t, to: t, label: 'امروز' };
-  if (p === 'week') { const x = new Date(d); x.setDate(x.getDate() - 6); return { from: iso(x), to: t, label: 'هفت روز اخیر' }; }
+  if (p === 'week') return { from: local(-6), to: t, label: 'هفت روز اخیر' };
   if (p === 'month') return { from: t.slice(0, 7) + '-01', to: t, label: 'ماه جاری' };
-  if (p === '3m') { const x = new Date(d); x.setMonth(x.getMonth() - 3); return { from: iso(x), to: t, label: 'سه ماه اخیر' }; }
+  if (p === '3m') return { from: local(-89), to: t, label: 'سه ماه اخیر' };
   if (p === 'year') return { from: t.slice(0, 4) + '-01-01', to: t, label: 'امسال' };
   return { from: customFrom, to: customTo, label: 'بازه دلخواه' };
 }
@@ -136,16 +140,32 @@ export default function App() {
   const reportTotals = useMemo(() => calcTotals(reportTxs), [reportTxs]);
   const dist = useMemo(() => groupByCategory(reportTxs, 'expense'), [reportTxs]);
   const maxDist = Math.max(1, ...dist.map(x => x.total));
-  const repDays = useMemo(() => {
-    if (period === 'today') return [todayStr()];
-    if (period === 'week') return lastNDays(7);
-    if (period === 'month') return lastNDays(30);
-    if (period === '3m') return lastNDays(30);
-    if (period === 'year') return lastNDays(12);
-    return lastNDays(14);
-  }, [period]);
-  const repTrend = useMemo(() => groupByDay(reportTxs, repDays.slice(-14)), [reportTxs, repDays]);
+  const repTrend = useMemo(() => {
+    if (period === '3m') return groupByMonth(reportTxs, lastNMonths(3));
+    if (period === 'year') return groupByMonth(reportTxs, lastNMonths(12));
+    if (period === 'custom') {
+      if (cFrom > cTo) return [];
+      const start = new Date(cFrom + 'T12:00:00');
+      const end = new Date(cTo + 'T12:00:00');
+      const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+      if (days > 62) {
+        const months: string[] = [];
+        const cursor = new Date(start);
+        cursor.setDate(1);
+        while (cursor <= end) {
+          months.push(todayStr(cursor).slice(0, 7));
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+        return groupByMonth(reportTxs, months);
+      }
+      return groupByDay(reportTxs, lastNDays(Math.min(days, 14), end));
+    }
+    if (period === 'today') return groupByDay(reportTxs, [todayStr()]);
+    if (period === 'week') return groupByDay(reportTxs, lastNDays(7));
+    return groupByDay(reportTxs, lastNDays(30));
+  }, [reportTxs, period, cFrom, cTo]);
   const maxRep = Math.max(1, ...repTrend.flatMap(x => [x.income, x.expense]));
+  const customRangeError = period === 'custom' && cFrom > cTo ? 'تاریخ شروع نباید بعد از تاریخ پایان باشد.' : '';
 
   async function persistAdd(t: Transaction, isEdit: boolean) {
     try { await dbPut(t); } catch { /* fallback only */ }
@@ -203,38 +223,78 @@ export default function App() {
   function delCategory(id: string) {
     const c = cats.find(x => x.id === id);
     if (!c) return;
+    if (DEFAULT_CATS.some(x => x.id === c.id)) { say('دسته‌های پیش‌فرض قابل حذف نیستند.'); return; }
     if (txs.some(t => t.category === c.label)) { say('این دسته تراکنش دارد و حذف آن مجاز نیست.'); return; }
     setCats(p => p.filter(x => x.id !== id));
     say('دسته حذف شد.');
+  }
+
+  async function wipeAll() {
+    try {
+      await dbClear();
+      localStorage.removeItem(LS_FALLBACK);
+      localStorage.removeItem(LS_CATS);
+      setTxs([]);
+      setCats(DEFAULT_CATS);
+      setWipeStep(0);
+      say('همه تراکنش‌ها و دسته‌های سفارشی حذف شد.');
+    } catch {
+      say('حذف اطلاعات انجام نشد؛ اطلاعات فعلی حفظ شد.');
+    }
   }
 
   if (loading) return <div className="wrap"><div className="empty">در حال بارگذاری…</div></div>;
 
   return (
     <>
-      <div className="top">
-        <h1>دخل‌وخرج من</h1>
-        <div className="row">
-          <button className="btn ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}>
-            تم: {theme === 'dark' ? 'تاریک' : theme === 'light' ? 'روشن' : 'سیستم'}
-          </button>
+      <header className="top">
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true"><span>₺</span></div>
+          <div>
+            <h1>دخل‌وخرج من</h1>
+            <p>مدیریت ساده و آفلاین</p>
+          </div>
         </div>
-      </div>
+        <button className="btn ghost theme-button" aria-label="تغییر حالت نمایش" onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}>
+          <span aria-hidden="true">◐</span>
+          {theme === 'dark' ? 'تاریک' : theme === 'light' ? 'روشن' : 'سیستم'}
+        </button>
+      </header>
       {toast ? <div className="toast"><div>{toast}</div></div> : null}
       <div className="wrap">
         {tab === 'home' && (
           <>
-            <div className="grid cards">
-              <div className="card"><div className="k">موجودی فعلی</div><div className="v bal">{fmt(totals.balance)}</div></div>
-              <div className="card"><div className="k">مجموع درآمد</div><div className="v in">{fmt(totals.income)}</div></div>
-              <div className="card"><div className="k">مجموع هزینه</div><div className="v out">{fmt(totals.expense)}</div></div>
-              <div className="card"><div className="k">درآمد ماه جاری</div><div className="v in">{fmt(monthTotals.income)}</div></div>
-              <div className="card"><div className="k">هزینه ماه جاری</div><div className="v out">{fmt(monthTotals.expense)}</div></div>
-              <div className="card"><div className="k">مانده ماه جاری</div><div className="v bal">{fmt(monthTotals.balance)}</div></div>
+            <section className="hero-card">
+              <div className="hero-orb hero-orb-one" aria-hidden="true" />
+              <div className="hero-orb hero-orb-two" aria-hidden="true" />
+              <div className="hero-content">
+                <div>
+                  <div className="hero-label">موجودی فعلی</div>
+                  <div className="hero-balance">{fmt(totals.balance)}</div>
+                  <div className="hero-note">درآمد و هزینه‌های ثبت‌شده روی همین دستگاه</div>
+                </div>
+                <div className="hero-chip" aria-hidden="true">₺</div>
+              </div>
+              <div className="hero-stats">
+                <div><span>درآمد کل</span><b>{fmt(totals.income)}</b></div>
+                <div><span>هزینه کل</span><b>{fmt(totals.expense)}</b></div>
+                <div><span>تراکنش</span><b>{totals.count.toLocaleString('fa-IR')}</b></div>
+              </div>
+            </section>
+            <div className="quick-actions">
+              <button className="action-card income-action" onClick={() => setModal({ open: true, preset: 'income' })}>
+                <span className="action-icon" aria-hidden="true">＋</span>
+                <span><b>ثبت درآمد</b><small>ورودی جدید</small></span>
+              </button>
+              <button className="action-card expense-action" onClick={() => setModal({ open: true, preset: 'expense' })}>
+                <span className="action-icon" aria-hidden="true">−</span>
+                <span><b>ثبت هزینه</b><small>خروجی جدید</small></span>
+              </button>
             </div>
-            <div className="row" style={{ marginTop: 12 }}>
-              <button className="btn ok" onClick={() => setModal({ open: true, preset: 'income' })}>+ ثبت درآمد</button>
-              <button className="btn danger" onClick={() => setModal({ open: true, preset: 'expense' })}>− ثبت هزینه</button>
+            <div className="grid cards">
+              <div className="card stat-card"><div className="k">درآمد ماه جاری</div><div className="v in">{fmt(monthTotals.income)}</div></div>
+              <div className="card stat-card"><div className="k">هزینه ماه جاری</div><div className="v out">{fmt(monthTotals.expense)}</div></div>
+              <div className="card stat-card"><div className="k">مانده ماه جاری</div><div className="v bal">{fmt(monthTotals.balance)}</div></div>
             </div>
             <h2>نمودار هفت روز اخیر</h2>
             {txs.length === 0 ? <div className="empty">هنوز تراکنشی ثبت نشده است. از دکمه‌های بالا اولین تراکنش را ثبت کنید.</div> : (
@@ -327,7 +387,7 @@ export default function App() {
                 <div><label>تا تاریخ</label><input type="date" value={cTo} onChange={e => setCTo(e.target.value)} /></div>
               </div>
             )}
-            {reportTxs.length === 0 ? <div className="empty">در این بازه داده‌ای وجود ندارد.</div> : (
+            {customRangeError ? <div className="err">{customRangeError}</div> : reportTxs.length === 0 ? <div className="empty">در این بازه داده‌ای وجود ندارد.</div> : (
               <>
                 <div className="grid cards" style={{ marginTop: 10 }}>
                   <div className="card"><div className="k">مجموع درآمد</div><div className="v in">{fmt(reportTotals.income)}</div></div>
@@ -343,7 +403,7 @@ export default function App() {
                       <div className="bar" key={d.date}>
                         <div className="col" style={{ height: Math.max(3, (d.income / maxRep) * 48), background: '#16a34a' }} />
                         <div className="col" style={{ height: Math.max(3, (d.expense / maxRep) * 48), background: '#dc2626' }} />
-                        <span className="muted" style={{ fontSize: 9 }}>{d.date.slice(5)}</span>
+                        <span className="muted" style={{ fontSize: 9 }}>{d.date.replace('-', '/')}</span>
                       </div>
                     ))}
                   </div>
@@ -403,9 +463,9 @@ export default function App() {
             <div className="card" style={{ marginTop: 10 }}>
               <h3>حذف تمام اطلاعات</h3>
               {wipeStep === 0 ? <button className="btn danger" onClick={() => setWipeStep(1)}>حذف همه اطلاعات</button> : wipeStep === 1 ? (
-                <><div className="err">آیا واقعاً مطمئن هستید؟ این عمل قابل بازگشت نیست.</div><div className="row"><button className="btn danger" onClick={() => setWipeStep(2)}>بله، مطمئنم</button><button className="btn ghost" onClick={() => setWipeStep(0)}>انصراف</button></div></>
+                <><div className="err">این کار همه تراکنش‌ها و دسته‌های سفارشی را حذف می‌کند و قابل بازگشت نیست.</div><div className="row"><button className="btn danger" onClick={() => setWipeStep(2)}>بله، مطمئنم</button><button className="btn ghost" onClick={() => setWipeStep(0)}>انصراف</button></div></>
               ) : (
-                <><div className="err">تأیید نهایی: برای حذف دائم همه تراکنش‌ها کلیک کنید.</div><div className="row"><button className="btn danger" onClick={async () => { await dbClear(); setTxs([]); setWipeStep(0); say('همه اطلاعات حذف شد.'); }}>تأیید نهایی حذف</button><button className="btn ghost" onClick={() => setWipeStep(0)}>انصراف</button></div></>
+                <><div className="err">تأیید نهایی: همه تراکنش‌ها و دسته‌های سفارشی حذف می‌شوند.</div><div className="row"><button className="btn danger" onClick={wipeAll}>تأیید نهایی حذف</button><button className="btn ghost" onClick={() => setWipeStep(0)}>انصراف</button></div></>
               )}
             </div>
             <div className="card" style={{ marginTop: 10 }}>
@@ -416,12 +476,12 @@ export default function App() {
         )}
       </div>
 
-      <div className="nav">
-        <button className={tab === 'home' ? 'on' : ''} onClick={() => setTab('home')}>خانه</button>
-        <button className={tab === 'txs' ? 'on' : ''} onClick={() => setTab('txs')}>تراکنش‌ها</button>
-        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>گزارش‌ها</button>
-        <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>تنظیمات</button>
-      </div>
+      <nav className="nav" aria-label="ناوبری اصلی">
+        <button className={tab === 'home' ? 'on' : ''} onClick={() => setTab('home')}><span aria-hidden="true">⌂</span><small>خانه</small></button>
+        <button className={tab === 'txs' ? 'on' : ''} onClick={() => setTab('txs')}><span aria-hidden="true">▤</span><small>تراکنش‌ها</small></button>
+        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}><span aria-hidden="true">◔</span><small>گزارش‌ها</small></button>
+        <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}><span aria-hidden="true">⚙</span><small>تنظیمات</small></button>
+      </nav>
 
       {modal.open && <TxModal preset={modal.preset} edit={modal.edit} cats={cats} onClose={() => setModal({ open: false, preset: 'expense' })} onSave={async (t, isEdit) => { await persistAdd(t, isEdit); setModal({ open: false, preset: 'expense' }); say(isEdit ? 'تراکنش ویرایش شد.' : 'تراکنش ثبت شد.'); }} />}
 
@@ -452,31 +512,38 @@ function TxModal({ preset, edit, cats, onClose, onSave }: { preset: TxType; edit
   function submit() {
     const e = validateTx({ type, amount, title, category, date });
     if (!e.length && !avail.some(c => c.label === category)) e.push('دسته‌بندی معتبر نیست.');
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) e.push('ساعت نامعتبر است.');
+    if (desc.trim().length > 500) e.push('توضیح بیش از حد طولانی است.');
+    const num = parseAmount(amount);
+    if (!e.length && num === null) e.push('مبلغ نامعتبر است.');
     if (e.length) { setErrs(e); return; }
-    const num = Number(String(amount).replace(/[^\d]/g, (ch) => {
-      const fa = '۰۱۲۳۴۵۶۷۸۹';
-      const i = fa.indexOf(ch);
-      return i >= 0 ? String(i) : '';
-    }) || amount);
+
     const now = new Date().toISOString();
     const t: Transaction = {
-      id: edit?.id ?? uid(), type, amount: Math.round(Number(num)), title: title.trim(),
-      category, date, time, description: desc.trim(),
-      createdAt: edit?.createdAt ?? now, updatedAt: now,
+      id: edit?.id ?? uid(),
+      type,
+      amount: num as number,
+      title: title.trim(),
+      category,
+      date,
+      time,
+      description: desc.trim(),
+      createdAt: edit?.createdAt ?? now,
+      updatedAt: now,
     };
     onSave(t, !!edit);
   }
   return (
-    <div className="modal" onClick={onClose}>
+    <div className="modal" role="dialog" aria-modal="true" aria-label={edit ? 'ویرایش تراکنش' : 'ثبت تراکنش'} onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()}>
         <h3>{edit ? 'ویرایش تراکنش' : type === 'income' ? 'ثبت درآمد' : 'ثبت هزینه'}</h3>
         {errs.length > 0 && <div className="err">{errs.map((x, i) => <div key={i}>• {x}</div>)}</div>}
         <div className="row">
-          <button className={type === 'income' ? 'btn ok' : 'btn ghost'} onClick={() => setType('income')}>درآمد</button>
-          <button className={type === 'expense' ? 'btn danger' : 'btn ghost'} onClick={() => setType('expense')}>هزینه</button>
+          <button className={type === 'income' ? 'btn ok' : 'btn ghost'} onClick={() => { setType('income'); if (!cats.some(c => (c.kind === 'both' || c.kind === 'income') && c.label === category)) setCategory(''); }}>درآمد</button>
+          <button className={type === 'expense' ? 'btn danger' : 'btn ghost'} onClick={() => { setType('expense'); if (!cats.some(c => (c.kind === 'both' || c.kind === 'expense') && c.label === category)) setCategory(''); }}>هزینه</button>
         </div>
         <label>مبلغ (تومان)</label>
-        <input inputMode="numeric" placeholder="مثلاً 2500000" value={amount} onChange={e => setAmount(e.target.value)} />
+        <input inputMode="numeric" autoFocus={!edit} placeholder="مثلاً 2500000" value={amount} onChange={e => setAmount(e.target.value)} aria-label="مبلغ به تومان" />
         <label>عنوان</label>
         <input placeholder="مثلاً حقوق مرداد" value={title} onChange={e => setTitle(e.target.value)} />
         <label>دسته‌بندی</label>
