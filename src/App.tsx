@@ -124,7 +124,7 @@ export default function App() {
   const [draggingHomeCard, setDraggingHomeCard] = useState<HomeCardId|null>(null);
   const homeTrackRef = useRef<HTMLDivElement>(null);
   const homeCardRefs = useRef<Partial<Record<HomeCardId, HTMLElement>>>({});
-  const homeDragRef = useRef<{id:HomeCardId;pointerId:number;startX:number;active:boolean;overId:HomeCardId|null}>({id:'balance',pointerId:-1,startX:0,active:false,overId:null});
+  const homeDragRef = useRef<{id:HomeCardId;pointerId:number;startX:number;active:boolean;lastOrder:string}>({id:'balance',pointerId:-1,startX:0,active:false,lastOrder:''});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -366,7 +366,7 @@ export default function App() {
     if (e) {
       try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     }
-    homeDragRef.current = { id:'balance', pointerId:-1, startX:0, active:false, overId:null };
+    homeDragRef.current = { id:'balance', pointerId:-1, startX:0, active:false, lastOrder:'' };
     setDraggingHomeCard(null);
   };
 
@@ -399,25 +399,20 @@ export default function App() {
     }
 
     setSettings(prev => {
-      const ordered = prev.homeCards;
-      const candidates = ordered
-        .filter(x => x !== state.id)
-        .map(x => ({id:x, rect:homeCardRefs.current[x]?.getBoundingClientRect()}))
-        .filter(x => x.rect);
-      let target: HomeCardId|null = null;
-      for (const item of candidates) {
-        const rect = item.rect!;
-        if (e.clientX < rect.left + rect.width / 2) {
-          target = item.id;
+      const remaining = prev.homeCards.filter(x => x !== state.id);
+      let insertIndex = remaining.length;
+      for (let i=0;i<remaining.length;i++) {
+        const rect = homeCardRefs.current[remaining[i]]?.getBoundingClientRect();
+        if (rect && e.clientX < rect.left + rect.width / 2) {
+          insertIndex = i;
           break;
         }
       }
-      if (!target) target = candidates.at(-1)?.id ?? null;
-      if (!target || target === state.id || target === state.overId) return prev;
-      state.overId = target;
-      const next = ordered.filter(x => x !== state.id);
-      const targetIndex = next.indexOf(target);
-      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, state.id);
+      const next = [...remaining];
+      next.splice(insertIndex,0,state.id);
+      const nextOrder = next.join('|');
+      if (nextOrder === prev.homeCards.join('|')) return prev;
+      state.lastOrder = nextOrder;
       return {...prev,homeCards:next};
     });
   };
@@ -426,7 +421,7 @@ export default function App() {
     if (e.button !== 0) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    homeDragRef.current = {id,pointerId:e.pointerId,startX:e.clientX,active:false,overId:null};
+    homeDragRef.current = {id,pointerId:e.pointerId,startX:e.clientX,active:false,lastOrder:''};
   };
 
   const systemCats=cats.filter(c => c.system);
