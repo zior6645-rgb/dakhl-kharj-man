@@ -29,12 +29,12 @@ export interface Category {
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type FontScale = 'small' | 'default' | 'large' | 'xlarge' | 'xxlarge';
-export type HomeCardId = 'balance' | 'monthIncome' | 'monthExpense' | 'monthBalance' | 'topCategory' | 'transactionCount' | 'latestTransaction' | 'currencySummary';
+export type HomeInsightId = 'balance' | 'monthIncome' | 'monthExpense' | 'latestTransaction';
 
 export interface AppSettings {
   language: LanguageCode;
   currency: CurrencyCode;
   theme: ThemeMode;
   fontScale: FontScale;
-  homeCards: HomeCardId[];
+  homeInsightOrder: HomeInsightId[];
 }

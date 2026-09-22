@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import type { AppSettings, Category, CurrencyCode, FontScale, HomeCardId, LanguageCode, ThemeMode, Transaction, TxType } from './types';
+import type { AppSettings, Category, CurrencyCode, FontScale, HomeInsightId, LanguageCode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
@@ -11,18 +11,17 @@ const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
 const LS_FALLBACK = 'dk-txs-fallback';
 const LS_WIPED = 'dk-txs-wiped';
-const DEFAULT_HOME_CARDS: HomeCardId[] = ['balance','monthIncome','monthExpense','monthBalance','topCategory','transactionCount','latestTransaction','currencySummary'];
-const ALL_HOME_CARDS: HomeCardId[] = ['balance','monthIncome','monthExpense','monthBalance','topCategory','transactionCount','latestTransaction','currencySummary'];
+const DEFAULT_HOME_INSIGHTS: HomeInsightId[] = ['balance','monthIncome','monthExpense','latestTransaction'];
 
 function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default', homeCards: Array.isArray(s.homeCards) ? s.homeCards.filter((x: any) => ALL_HOME_CARDS.includes(x)).filter((x: any, i: number, arr: any[]) => arr.indexOf(x) === i) : DEFAULT_HOME_CARDS };
+      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default', homeInsightOrder: Array.isArray(s.homeInsightOrder) ? s.homeInsightOrder.filter((x: any) => DEFAULT_HOME_INSIGHTS.includes(x)).filter((x: any, i: number, arr: any[]) => arr.indexOf(x) === i) : [...DEFAULT_HOME_INSIGHTS] };
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default', homeCards:[...DEFAULT_HOME_CARDS] };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default', homeInsightOrder:[...DEFAULT_HOME_INSIGHTS] };
 }
 
 function loadCategories(): Category[] {
@@ -120,11 +119,11 @@ export default function App() {
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
-  const [showHomeCardManager, setShowHomeCardManager] = useState(false);
-  const [draggingHomeCard, setDraggingHomeCard] = useState<HomeCardId|null>(null);
+  const [homeInsight, setHomeInsight] = useState<HomeInsightId>('balance');
+  const [draggingHomeInsight, setDraggingHomeInsight] = useState(false);
   const homeTrackRef = useRef<HTMLDivElement>(null);
-  const homeCardRefs = useRef<Partial<Record<HomeCardId, HTMLElement>>>({});
-  const homeDragRef = useRef<{id:HomeCardId;pointerId:number;startX:number;active:boolean;lastOrder:string}>({id:'balance',pointerId:-1,startX:0,active:false,lastOrder:''});
+  const homeIconRefs = useRef<Partial<Record<HomeInsightId, HTMLElement>>>({});
+  const homeDragRef = useRef<{id:HomeInsightId;pointerId:number;startX:number;active:boolean;lastOrder:string}>({id:'balance',pointerId:-1,startX:0,active:false,lastOrder:''});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -360,68 +359,48 @@ export default function App() {
     say(t(lang,'allDataDeleted'));
   }
 
-  const stopHomeCardDrag = (e?: PointerEvent<HTMLButtonElement>) => {
+  const stopHomeInsightDrag = (e?: PointerEvent<HTMLButtonElement>) => {
     const state = homeDragRef.current;
     if (e && state.pointerId !== e.pointerId) return;
-    if (e) {
-      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-    }
-    homeDragRef.current = { id:'balance', pointerId:-1, startX:0, active:false, lastOrder:'' };
-    setDraggingHomeCard(null);
+    if (e) { try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {} }
+    homeDragRef.current = {id:'balance',pointerId:-1,startX:0,active:false,lastOrder:''};
+    setDraggingHomeInsight(false);
   };
 
-  const reorderHomeCard = (id:HomeCardId, targetId:HomeCardId) => {
-    setSettings(prev => {
-      if (id === targetId) return prev;
-      const current = prev.homeCards;
-      if (!current.includes(id) || !current.includes(targetId)) return prev;
-      const next = current.filter(x => x !== id);
-      const targetIndex = next.indexOf(targetId);
-      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, id);
-      return {...prev, homeCards:next};
-    });
-  };
-
-  const moveHomeCardFromPointer = (e: PointerEvent<HTMLButtonElement>) => {
+  const moveHomeInsight = (e: PointerEvent<HTMLButtonElement>) => {
     const state = homeDragRef.current;
     if (state.pointerId !== e.pointerId) return;
     if (!state.active) {
       if (Math.abs(e.clientX - state.startX) < 8) return;
       state.active = true;
-      setDraggingHomeCard(state.id);
+      setDraggingHomeInsight(true);
     }
-
     const track = homeTrackRef.current;
     if (track) {
       const r = track.getBoundingClientRect();
-      if (e.clientX < r.left + 42) track.scrollBy({left:-12,behavior:'auto'});
-      else if (e.clientX > r.right - 42) track.scrollBy({left:12,behavior:'auto'});
+      if (e.clientX < r.left + 24) track.scrollBy({left:-10,behavior:'auto'});
+      else if (e.clientX > r.right - 24) track.scrollBy({left:10,behavior:'auto'});
     }
-
     setSettings(prev => {
-      const remaining = prev.homeCards.filter(x => x !== state.id);
+      const remaining = prev.homeInsightOrder.filter(x => x !== state.id);
       let insertIndex = remaining.length;
       for (let i=0;i<remaining.length;i++) {
-        const rect = homeCardRefs.current[remaining[i]]?.getBoundingClientRect();
-        if (rect && e.clientX < rect.left + rect.width / 2) {
-          insertIndex = i;
-          break;
-        }
+        const rect = homeIconRefs.current[remaining[i]]?.getBoundingClientRect();
+        if (rect && e.clientX < rect.left + rect.width/2) { insertIndex=i; break; }
       }
-      const next = [...remaining];
+      const next=[...remaining];
       next.splice(insertIndex,0,state.id);
-      const nextOrder = next.join('|');
-      if (nextOrder === prev.homeCards.join('|')) return prev;
-      state.lastOrder = nextOrder;
-      return {...prev,homeCards:next};
+      if (next.join('|') === prev.homeInsightOrder.join('|')) return prev;
+      return {...prev,homeInsightOrder:next};
     });
   };
 
-  const startHomeCardDrag = (id:HomeCardId, e:PointerEvent<HTMLButtonElement>) => {
+  const startHomeInsightDrag = (id:HomeInsightId,e:PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    homeDragRef.current = {id,pointerId:e.pointerId,startX:e.clientX,active:false,lastOrder:''};
+    homeDragRef.current={id,pointerId:e.pointerId,startX:e.clientX,active:false,lastOrder:''};
+    setHomeInsight(id);
   };
 
   const systemCats=cats.filter(c => c.system);
@@ -455,7 +434,6 @@ export default function App() {
               <div className="hero-balance">{fmtMoney(currentTotals.balance,settings.currency,locale)}</div>
               <div className="hero-note">{t(lang,'recordedOnDevice')}</div>
             </div>
-            <img className="hero-chip-img" src="./icon.svg" alt="" />
           </div>
           <div className="hero-stats">
             <div><span>{t(lang,'totalIncome')}</span><b>{fmtMoney(currentTotals.income,settings.currency,locale)}</b></div>
@@ -463,90 +441,42 @@ export default function App() {
             <div><span>{t(lang,'transactions')}</span><b>{fmtNum(currentTotals.count,locale)}</b></div>
           </div>
         </section>
-
         <div className="quick-actions">
           <button className="action-card income-action" onClick={() => setModal({open:true,preset:'income'})}><span className="action-icon">＋</span><span><b>{t(lang,'registerIncome')}</b><small>{t(lang,'newInput')}</small></span></button>
           <button className="action-card expense-action" onClick={() => setModal({open:true,preset:'expense'})}><span className="action-icon">−</span><span><b>{t(lang,'registerExpense')}</b><small>{t(lang,'newOutput')}</small></span></button>
         </div>
-
-        <section className="home-carousel-section">
-          <div className="section-head">
-            <div>
-              <h2>{t(lang,'homeCards')}</h2>
-              <div className="muted">{t(lang,'cardHint')}</div>
-            </div>
-            <button className="btn ghost compact-btn" onClick={() => setShowHomeCardManager(true)}>＋ {t(lang,'addHomeCard')}</button>
-          </div>
-          <div ref={homeTrackRef} className="home-card-track" aria-label={t(lang,'homeCards')}>
-            {settings.homeCards.map((id, index) => {
-              const moveCard = (dir: -1 | 1) => {
-                setSettings(s => {
-                  const next=[...s.homeCards];
-                  const target=index+dir;
-                  if(target<0 || target>=next.length) return s;
-                  [next[index],next[target]]=[next[target],next[index]];
-                  return {...s,homeCards:next};
-                });
-              };
-              const removeCard = () => setSettings(s => ({...s,homeCards:s.homeCards.filter(x => x!==id)}));
-              const nav = <>
-                <button
-                  type="button"
-                  className="home-card-drag-handle"
-                  aria-label={t(lang,'cardHint')}
-                  title={t(lang,'cardHint')}
-                  onPointerDown={(e) => startHomeCardDrag(id,e)}
-                  onPointerMove={moveHomeCardFromPointer}
-                  onPointerUp={stopHomeCardDrag}
-                  onPointerCancel={stopHomeCardDrag}
-                >⋮⋮</button>
-                <div className="home-card-controls">
-                  <button className="icon-btn" aria-label={t(lang,'moveLeft')} onClick={() => moveCard(-1)}>‹</button>
-                  <button className="icon-btn" aria-label={t(lang,'moveRight')} onClick={() => moveCard(1)}>›</button>
-                </div>
-              </>;
-              const cardStyle = {opacity: draggingHomeCard===id ? 0.68 : 1, transform: draggingHomeCard===id ? 'scale(.98)' : undefined};
-              const cardRef = (el: HTMLElement|null) => { if (el) homeCardRefs.current[id]=el; else delete homeCardRefs.current[id]; };
-              if (id==='balance') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeCard===id?' is-dragging':'')} key={id}>{nav}<span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
-              if (id==='monthIncome') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
-              if (id==='monthExpense') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
-              if (id==='monthBalance') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthBalanceCard')}</span><strong className="card-amount">{fmtMoney(monthTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
-              if (id==='topCategory') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'topCategoryCard')}</span><strong className="card-text">{topExpenseLabel==='—'?'—':categoryLabel(topExpenseLabel,'',lang)}</strong><span className="card-sub">{topExpenseLabel==='—'?t(lang,'noTransactions'):fmtMoney((groupByCategory(txs.filter(x=>x.currency===settings.currency),'expense',settings.currency)[0]?.total ?? 0),settings.currency,locale)}</span></article>;
-              if (id==='transactionCount') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'transactionCountCard')}</span><strong className="card-amount">{fmtNum(currentTotals.count,locale)}</strong><span className="card-sub">{t(lang,'transactions')}</span></article>;
-              if (id==='latestTransaction') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></article>;
-              return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'currencySummaryCard')}</span><strong className="card-amount">{fmtNum(balances.length,locale)}</strong><span className="card-sub">{t(lang,'otherCurrencies')}</span></article>;
+        <section className="home-insights-section">
+          <h2>{t(lang,'homeInsights')}</h2>
+          <div className="muted" style={{marginBottom:8}}>{t(lang,'homeInsightHint')}</div>
+          <div ref={homeTrackRef} className="home-insight-icons" aria-label={t(lang,'homeInsights')}>
+            {settings.homeInsightOrder.map(id => {
+              const icon = id==='balance' ? '◉' : id==='monthIncome' ? '↗' : id==='monthExpense' ? '↘' : '◷';
+              const labelKey = id==='balance'?'balanceCard':id==='monthIncome'?'monthIncomeCard':id==='monthExpense'?'monthExpenseCard':'latestTransactionCard';
+              return <button key={id} ref={el => { if (el) homeIconRefs.current[id]=el; else delete homeIconRefs.current[id]; }}
+                className={'home-insight-icon'+(homeInsight===id?' active':'')+(draggingHomeInsight && homeInsight===id?' dragging':'')}
+                aria-label={t(lang,labelKey)} title={t(lang,labelKey)}
+                onClick={() => setHomeInsight(id)}
+                onPointerDown={e => startHomeInsightDrag(id,e)} onPointerMove={moveHomeInsight}
+                onPointerUp={stopHomeInsightDrag} onPointerCancel={stopHomeInsightDrag}>
+                <span>{icon}</span>
+              </button>;
             })}
-            <button className="home-add-card" onClick={() => setShowHomeCardManager(true)}><span>＋</span><b>{t(lang,'addHomeCard')}</b></button>
           </div>
+          <article className="home-insight-detail">
+            {homeInsight==='balance' && <><span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+            {homeInsight==='monthIncome' && <><span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+            {homeInsight==='monthExpense' && <><span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+            {homeInsight==='latestTransaction' && <><span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></>}
+          </article>
         </section>
-
         <h2>{t(lang,'last7Days')}</h2>
-        <div className="card">
-          <div className="bars">
-            {trend7.map(d => <div className="bar" key={d.date}>
-              <div className="col income-bar" style={{height:Math.max(3,(d.income/max7)*52)}} title={t(lang,'income')+' '+fmtMoney(d.income,settings.currency,locale)} />
-              <div className="col expense-bar" style={{height:Math.max(3,(d.expense/max7)*52)}} title={t(lang,'expense')+' '+fmtMoney(d.expense,settings.currency,locale)} />
-              <span className="muted" style={{fontSize:10}}>{d.date.slice(5)}</span>
-            </div>)}
-          </div>
-          <div className="muted">{t(lang,'greenIncomeRedExpense')}</div>
-        </div>
-
-        <h2>{t(lang,'financialSummary')}</h2>
-        <div className="card">
-          <div>{t(lang,'totalTransactions')}: <b>{fmtNum(currentTotals.count,locale)}</b></div>
-          <div className="muted">{t(lang,'topExpenseCategory')}: {topCategory(txs,settings.currency)==='—'?'—':categoryLabel(topCategory(txs,settings.currency),'',lang)}</div>
-          <div className="currency-note">{t(lang,'currencyNote')}</div>
-        </div>
-
-        {balances.length>0 && <><h2>{t(lang,'currencySummary')}</h2><div className="grid currency-grid">
-          {balances.map(b => <div className="card" key={b.code}>
-            <div className="row space"><b>{CURRENCY_MAP[b.code].names[lang]}</b><span className="muted">{b.code}</span></div>
-            <div className="v bal">{fmtMoney(b.balance,b.code,locale)}</div>
-            <div className="muted">{t(lang,'totalIncome')}: {fmtMoney(b.income,b.code,locale)} · {t(lang,'totalExpense')}: {fmtMoney(b.expense,b.code,locale)}</div>
+        <div className="card"><div className="bars">
+          {trend7.map(d => <div className="bar" key={d.date}>
+            <div className="col income-bar" style={{height:Math.max(3,(d.income/max7)*52)}} title={t(lang,'income')+' '+fmtMoney(d.income,settings.currency,locale)} />
+            <div className="col expense-bar" style={{height:Math.max(3,(d.expense/max7)*52)}} title={t(lang,'expense')+' '+fmtMoney(d.expense,settings.currency,locale)} />
+            <span className="muted" style={{fontSize:10}}>{d.date.slice(5)}</span>
           </div>)}
-        </div></>}
-
+        </div><div className="muted">{t(lang,'greenIncomeRedExpense')}</div></div>
         <h2>{t(lang,'latestTransactions')}</h2>
         {txs.length===0 ? <div className="empty">{t(lang,'noneYet')} {t(lang,'registerFirst')}</div> :
           <div className="list">{txs.slice(0,5).map(x => <div className="item" key={x.id}>
@@ -556,7 +486,6 @@ export default function App() {
             <b className={x.type==='income'?'money-in':'money-out'}>{fmtMoney(x.amount,x.currency,locale)}</b>
           </div>)}</div>}
       </>}
-
       {tab==='txs' && <>
         <h2>{t(lang,'transactionsTitle')}</h2>
         <div className="toolbar">
@@ -633,24 +562,6 @@ export default function App() {
         </div>
 
         <div className="card" style={{marginTop:10}}>
-          <div className="section-head">
-            <div><h3>{t(lang,'homeCards')}</h3><div className="muted">{t(lang,'cardHint')}</div></div>
-            <button className="btn ghost compact-btn" onClick={() => setShowHomeCardManager(true)}>＋ {t(lang,'addHomeCard')}</button>
-          </div>
-          <div className="home-card-manager">
-            {settings.homeCards.map((id,index) => <div className="manager-row" key={id}>
-              <b>{t(lang, id==='balance'?'balanceCard':id==='monthIncome'?'monthIncomeCard':id==='monthExpense'?'monthExpenseCard':id==='monthBalance'?'monthBalanceCard':id==='topCategory'?'topCategoryCard':id==='transactionCount'?'transactionCountCard':id==='latestTransaction'?'latestTransactionCard':'currencySummaryCard')}</b>
-              <div className="row">
-                <button className="icon-btn" aria-label={t(lang,'moveLeft')} disabled={index===0} onClick={() => setSettings(s => { const n=[...s.homeCards]; [n[index-1],n[index]]=[n[index],n[index-1]]; return {...s,homeCards:n}; })}>‹</button>
-                <button className="icon-btn" aria-label={t(lang,'moveRight')} disabled={index===settings.homeCards.length-1} onClick={() => setSettings(s => { const n=[...s.homeCards]; [n[index],n[index+1]]=[n[index+1],n[index]]; return {...s,homeCards:n}; })}>›</button>
-                <button className="btn ghost compact-btn" onClick={() => setSettings(s => ({...s,homeCards:s.homeCards.filter(x => x!==id)}))}>{t(lang,'removeHomeCard')}</button>
-              </div>
-            </div>)}
-            <button className="btn ghost" onClick={() => setSettings(s => ({...s,homeCards:[...DEFAULT_HOME_CARDS]}))}>{t(lang,'restoreHomeCards')}</button>
-          </div>
-        </div>
-
-        <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'language')}</h3>
           <select value={lang} onChange={e => { const next=e.target.value as LanguageCode; setSettings(s=>({...s,language:next})); say(t(next,'languageReload')); }}>
             {(Object.keys(LANGUAGE_NAMES) as LanguageCode[]).map(x => <option value={x} key={x}>{LANGUAGE_NAMES[x]}</option>)}
@@ -703,12 +614,6 @@ export default function App() {
       <button className={tab==='settings'?'on':''} onClick={() => setTab('settings')}><span>⚙</span><small>{t(lang,'settingsTab')}</small></button>
     </nav>
 
-    {showHomeCardManager && <div className="modal" onClick={() => setShowHomeCardManager(false)}><div className="sheet" onClick={e => e.stopPropagation()}><div className="sheet-head"><h3>{t(lang,'addHomeCard')}</h3><button className="btn ghost" onClick={() => setShowHomeCardManager(false)}>×</button></div><div className="list home-card-options">
-      {ALL_HOME_CARDS.filter(id => !settings.homeCards.includes(id)).map(id => <button className="option-row" key={id} onClick={() => { setSettings(s => ({...s,homeCards:[...s.homeCards,id]})); setShowHomeCardManager(false); }}>
-        <span>{t(lang, id==='balance'?'balanceCard':id==='monthIncome'?'monthIncomeCard':id==='monthExpense'?'monthExpenseCard':id==='monthBalance'?'monthBalanceCard':id==='topCategory'?'topCategoryCard':id==='transactionCount'?'transactionCountCard':id==='latestTransaction'?'latestTransactionCard':'currencySummaryCard')}</span><b>＋</b>
-      </button>)}
-      <button className="btn ghost" onClick={() => setShowHomeCardManager(false)}>{t(lang,'cancel')}</button>
-    </div></div></div>}
     {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
     {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
