@@ -1,15 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="دخل‌وخرج من">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Finance wallet icon">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#14b8a6"/>
       <stop offset="1" stop-color="#0f766e"/>
     </linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
   </defs>
   <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-  <path d="M28 49c0-7.7 6.3-14 14-14h43c6.1 0 11 4.9 11 11v37c0 6.1-4.9 11-11 11H42c-7.7 0-14-6.3-14-14V49Z" fill="#fff" opacity=".98"/>
-  <path d="M28 54h54c9.4 0 17 7.6 17 17v6H28V54Z" fill="#d8f7f2"/>
-  <rect x="76" y="61" width="27" height="24" rx="9" fill="#fff"/>
-  <circle cx="83" cy="73" r="4.5" fill="#0f766e"/>
-  <path d="M48 45c7-10 20-12 30-4" fill="none" stroke="#14b8a6" stroke-width="5" stroke-linecap="round"/>
-  <text x="56" y="77" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="24" font-weight="800" fill="#0f766e">ت</text>
+  <path d="M25 50c0-8 6-14 14-14h44c7 0 12 5 12 12v36c0 7-5 12-12 12H39c-8 0-14-6-14-14V50Z" fill="#fff" opacity=".98"/>
+  <path d="M25 55h57c10 0 18 8 18 18v5H25V55Z" fill="#d9f7f3"/>
+  <rect x="77" y="61" width="26" height="25" rx="9" fill="#fff"/>
+  <circle cx="84" cy="73.5" r="4.5" fill="#0f766e"/>
+  <circle cx="56" cy="45" r="14" fill="url(#coin)" stroke="#fff" stroke-width="3"/>
+  <path d="M44 51 35 60" fill="none" stroke="#86efac" stroke-width="7" stroke-linecap="round"/>
+  <path d="M46 40 55 31l9 7 13-15" fill="none" stroke="#bbf7d0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M77 19v12h-12" fill="none" stroke="#bbf7d0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
