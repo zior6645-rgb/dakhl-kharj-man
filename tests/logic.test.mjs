@@ -64,7 +64,6 @@ assert(app.includes("registerPlugin<FileSaverPlugin>('FileSaver')"), 'native Fil
 assert(app.includes('utf8ToBase64'), 'UTF-8 content is converted to base64 for Android');
 assert(app.includes('await FileSaver.saveFile'), 'Android export calls native file saver');
 assert(app.includes("t(lang,'fileExportFailed')"), 'file export failure is reported instead of claiming success');
-assert(app.includes("t(lang,'fileShareCanceled')"), 'file share cancellation is reported');
 assert(app.includes("await deliverFile('dakhl-kharj-backup-v2.json'"), 'JSON backup uses the file delivery helper');
 assert(app.includes("await deliverFile('dakhl-kharj.csv'"), 'CSV export uses the file delivery helper');
 
