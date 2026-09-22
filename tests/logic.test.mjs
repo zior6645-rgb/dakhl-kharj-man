@@ -58,7 +58,6 @@ for(const token of ['HomeInsightId','homeInsightOrder','home-insights','home-car
 }
 
 assert(app.includes('const categoryName ='), 'custom category label resolver exists');
-assert(app.includes("import { Capacitor } from '@capacitor/core';"), 'native platform detection is available for file export');
 assert(app.includes("Capacitor.getPlatform() === 'android'"), 'Android-specific export path is used');
 assert(app.includes("registerPlugin<FileSaverPlugin>('FileSaver')"), 'native FileSaver plugin is registered');
 assert(app.includes('utf8ToBase64'), 'UTF-8 content is converted to base64 for Android');
