@@ -11,6 +11,8 @@ import { cloudConfigured, ensureCloudSession, fetchCloudData, loadCloudSession, 
 const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
 const LS_FALLBACK = 'dk-txs-fallback';
+const LS_CLOUD_FALLBACK = 'dk-cloud-txs-cache';
+const LS_CLOUD_CATS = 'dk-cloud-cats-cache';
 const LS_WIPED = 'dk-txs-wiped';
 const DEFAULT_HOME_INSIGHTS: HomeInsightId[] = ['balance','monthIncome','monthExpense','latestTransaction'];
 
@@ -157,8 +159,10 @@ export default function App() {
   }, [settings.currency]);
 
   useEffect(() => {
-    try { localStorage.setItem(LS_CATS, JSON.stringify(cats)); } catch {}
-  }, [cats]);
+    try {
+      localStorage.setItem(settings.storageMode==='cloud' ? LS_CLOUD_CATS : LS_CATS, JSON.stringify(cats));
+    } catch {}
+  }, [cats,settings.storageMode]);
 
   useEffect(() => {
     const onKey = (e:KeyboardEvent) => {
@@ -171,35 +175,34 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      let loaded: Transaction[] = [];
-      try {
-        const wiped = localStorage.getItem(LS_WIPED) === '1';
-        if (!wiped) {
-          const fb = localStorage.getItem(LS_FALLBACK);
-          if (fb) {
-            const raw = JSON.parse(fb);
-            if (Array.isArray(raw)) loaded = raw.map(x => normalizeTransaction(x,cats,settings.currency)).filter(Boolean) as Transaction[];
-          } else {
-            const all = await dbGetAll();
-            loaded = all.map(x => normalizeTransaction(x,cats,settings.currency)).filter(Boolean) as Transaction[];
-          }
-        }
-      } catch {
-        try {
+  async function loadOfflineData() {
+    let loaded: Transaction[] = [];
+    const localCats=loadCategories();
+    setCats(localCats);
+    try {
+      const wiped = localStorage.getItem(LS_WIPED) === '1';
+      if (!wiped) {
+        const fb = localStorage.getItem(LS_FALLBACK);
+        if (fb) {
+          const raw = JSON.parse(fb);
+          if (Array.isArray(raw)) loaded = raw.map(x => normalizeTransaction(x,localCats,settings.currency)).filter(Boolean) as Transaction[];
+        } else {
           const all = await dbGetAll();
-          loaded = all.map(x => normalizeTransaction(x,cats,settings.currency)).filter(Boolean) as Transaction[];
-        } catch {}
+          loaded = all.map(x => normalizeTransaction(x,localCats,settings.currency)).filter(Boolean) as Transaction[];
+        }
       }
-      loaded.sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
-      setTxs(loaded);
+    } catch {
       try {
-        if (loaded.length || localStorage.getItem(LS_WIPED) !== '1') localStorage.setItem(LS_FALLBACK,JSON.stringify(loaded));
+        const all = await dbGetAll();
+        loaded = all.map(x => normalizeTransaction(x,localCats,settings.currency)).filter(Boolean) as Transaction[];
       } catch {}
-      setLoading(false);
-    })();
-  }, []);
+    }
+    loaded.sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
+    setTxs(loaded);
+    setLoading(false);
+  }
+
+  useEffect(() => { if (settings.storageMode==='offline') void loadOfflineData(); }, [settings.storageMode]);
 
   useEffect(() => {
     if (settings.storageMode !== 'cloud') return;
@@ -222,8 +225,8 @@ export default function App() {
         setCats(mergedCats);
         setTxs(cloudTxs);
         try {
-          localStorage.setItem(LS_FALLBACK,JSON.stringify(cloudTxs));
-          localStorage.setItem(LS_CATS,JSON.stringify(mergedCats));
+          localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(cloudTxs));
+          localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats));
         } catch {}
       } catch (err) {
         say(err instanceof Error ? err.message : t(lang,'cloudSyncFailed'));
@@ -303,7 +306,7 @@ export default function App() {
   function persistLocal(next:Transaction[]) {
     try {
       localStorage.removeItem(LS_WIPED);
-      localStorage.setItem(LS_FALLBACK,JSON.stringify(next));
+      localStorage.setItem(settings.storageMode==='cloud' ? LS_CLOUD_FALLBACK : LS_FALLBACK,JSON.stringify(next));
     } catch {}
     setTxs(next);
   }
@@ -358,14 +361,21 @@ export default function App() {
   async function uploadLocalToCloud() {
     if (!cloudSession) { setCloudAuthOpen(true); return; }
     try {
-      await uploadLocalTransactions(cloudSession,txs);
-      await uploadLocalCategories(cloudSession,cats);
+      const localRaw=localStorage.getItem(LS_FALLBACK);
+      const localList=localRaw ? JSON.parse(localRaw) : [];
+      const localCats=loadCategories();
+      const normalized=Array.isArray(localList)
+        ? localList.map(x=>normalizeTransaction(x,localCats,settings.currency)).filter(Boolean) as Transaction[]
+        : [];
+      await uploadLocalTransactions(cloudSession,normalized);
+      await uploadLocalCategories(cloudSession,localCats);
       say(t(lang,'cloudImportedLocal'));
       const data=await fetchCloudData(cloudSession);
       const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c=>!DEFAULT_CATS.some(d=>d.id===c.id))];
       setCats(mergedCats);
-      setTxs(data.transactions.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)));
-      try { localStorage.setItem(LS_FALLBACK,JSON.stringify(data.transactions)); localStorage.setItem(LS_CATS,JSON.stringify(mergedCats)); } catch {}
+      const next=data.transactions.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+      setTxs(next);
+      try { localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(next)); localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats)); } catch {}
     } catch {
       say(t(lang,'cloudSyncFailed'));
     }
@@ -441,7 +451,9 @@ export default function App() {
     try {
       localStorage.setItem(LS_WIPED,'1');
       localStorage.removeItem(LS_FALLBACK);
+      localStorage.removeItem(LS_CLOUD_FALLBACK);
       localStorage.removeItem(LS_CATS);
+      localStorage.removeItem(LS_CLOUD_CATS);
     } catch {}
     setTxs([]);
     setCats(DEFAULT_CATS);
