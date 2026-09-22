@@ -1,14 +1,14 @@
 {
-  "name": "دخل‌وخرج من",
-  "short_name": "دخل‌وخرج من",
+  "name": "Cashio",
+  "short_name": "Cashio",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
-  "dir": "rtl",
-  "lang": "fa",
+  "dir": "auto",
+  "lang": "en",
   "background_color": "#f3f7f6",
   "theme_color": "#0f766e",
-  "description": "مدیریت آفلاین درآمد و هزینه",
+  "description": "Private offline income and expense manager",
   "icons": [
     {
       "src": "icon.svg",
