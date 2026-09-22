@@ -1,14 +1,14 @@
 {
   "name": "Cashio",
   "short_name": "Cashio",
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "dir": "auto",
-  "lang": "en",
+  "dir": "rtl",
+  "lang": "fa",
   "background_color": "#f3f7f6",
   "theme_color": "#0f766e",
-  "description": "Private offline income and expense manager",
+  "description": "مدیریت ساده و آفلاین درآمد و هزینه",
   "icons": [
     {
       "src": "icon.svg",
