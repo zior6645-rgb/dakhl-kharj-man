@@ -1,6 +1,5 @@
 name: Release APK and AAB
 # Release build for Cashio
-# Final save-dialog verification
 
 concurrency:
   group: release-build
@@ -8,9 +7,6 @@ concurrency:
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
