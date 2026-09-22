@@ -141,7 +141,7 @@ export default function App() {
   const [cloudAuthOpen, setCloudAuthOpen] = useState(false);
   const homeTrackRef = useRef<HTMLDivElement>(null);
   const homeCardRefs = useRef<Partial<Record<HomeInsightId, HTMLElement>>>({});
-  const homeDragRef = useRef<{id:HomeInsightId;pointerId:number;startX:number;active:boolean}>({id:'balance',pointerId:-1,startX:0,active:false});
+  const homeDragRef = useRef<{id:HomeInsightId;pointerId:number;startY:number;active:boolean}>({id:'balance',pointerId:-1,startY:0,active:false});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -488,7 +488,7 @@ export default function App() {
     if (e) {
       try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
     }
-    homeDragRef.current = {id:'balance',pointerId:-1,startX:0,active:false};
+    homeDragRef.current = {id:'balance',pointerId:-1,startY:0,active:false};
     setDraggingHomeInsight(null);
   };
 
@@ -496,7 +496,7 @@ export default function App() {
     const state = homeDragRef.current;
     if (state.pointerId !== e.pointerId) return;
     if (!state.active) {
-      if (Math.abs(e.clientX - state.startX) < 8) return;
+      if (Math.abs(e.clientY - state.startY) < 8) return;
       state.active = true;
       setDraggingHomeInsight(state.id);
     }
@@ -504,8 +504,8 @@ export default function App() {
     const track = homeTrackRef.current;
     if (track) {
       const r = track.getBoundingClientRect();
-      if (e.clientX < r.left + 38) track.scrollBy({left:-12,behavior:'auto'});
-      else if (e.clientX > r.right - 38) track.scrollBy({left:12,behavior:'auto'});
+      if (e.clientY < r.top + 38) track.scrollBy({top:-12,behavior:'auto'});
+      else if (e.clientY > r.bottom - 38) track.scrollBy({top:12,behavior:'auto'});
     }
 
     setSettings(prev => {
@@ -513,7 +513,7 @@ export default function App() {
       let insertIndex = remaining.length;
       for (let i=0;i<remaining.length;i++) {
         const rect = homeCardRefs.current[remaining[i]]?.getBoundingClientRect();
-        if (rect && e.clientX < rect.left + rect.width / 2) {
+        if (rect && e.clientY < rect.top + rect.height / 2) {
           insertIndex = i;
           break;
         }
@@ -529,7 +529,7 @@ export default function App() {
     if (e.button !== 0) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    homeDragRef.current = {id,pointerId:e.pointerId,startX:e.clientX,active:false};
+    homeDragRef.current = {id,pointerId:e.pointerId,startY:e.clientY,active:false};
   };
 
   const systemCats=cats.filter(c => c.system);
@@ -581,7 +581,7 @@ export default function App() {
               <div className="muted">{t(lang,'cardHint')}</div>
             </div>
           </div>
-          <div ref={homeTrackRef} className="home-card-track" aria-label={t(lang,'homeInsights')}>
+          <div ref={homeTrackRef} className="home-card-stack" aria-label={t(lang,'homeInsights')}>
             {settings.homeInsightOrder.map(id => {
               const cardRef = (el: HTMLElement|null) => {
                 if (el) homeCardRefs.current[id]=el;
