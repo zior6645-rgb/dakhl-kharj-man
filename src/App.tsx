@@ -224,7 +224,9 @@ export default function App() {
   const days7 = useMemo(() => lastNDays(7), []);
   const trend7 = useMemo(() => groupByDay(txs,days7,settings.currency), [txs,days7,settings.currency]);
   const max7 = Math.max(1,...trend7.flatMap(x => [x.income,x.expense]));
-  const balances = useMemo(() => currenciesIn(txs).map(c => ({code:c, ...calcTotals(txs,c)})), [txs]);\n  const latest = txs[0];\n  const topExpenseLabel = topCategory(txs,settings.currency);
+  const balances = useMemo(() => currenciesIn(txs).map(c => ({code:c, ...calcTotals(txs,c)})), [txs]);
+  const latest = txs[0];
+  const topExpenseLabel = topCategory(txs,settings.currency);
 
   const pr = periodRange(period,cFrom,cTo);
   const reportTxs = useMemo(() => filterByDateRange(txs,pr.from,pr.to,reportCurrency), [txs,pr.from,pr.to,reportCurrency]);
