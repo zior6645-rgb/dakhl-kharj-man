@@ -1,11 +1,20 @@
 {
   "name": "دخل‌وخرج من",
   "short_name": "دخل‌وخرج من",
-  "start_url": ".",
+  "start_url": "/dakhl-kharj-man/",
+  "scope": "/dakhl-kharj-man/",
   "display": "standalone",
   "dir": "rtl",
   "lang": "fa",
-  "background_color": "#f4f6fb",
-  "theme_color": "#26A69A",
-  "description": "مدیریت آفلاین درآمد و هزینه"
+  "background_color": "#f3f7f6",
+  "theme_color": "#0f766e",
+  "description": "مدیریت آفلاین درآمد و هزینه",
+  "icons": [
+    {
+      "src": "/dakhl-kharj-man/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
