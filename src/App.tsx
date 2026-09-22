@@ -1,647 +1,609 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Category, ThemeMode, Transaction, TxType } from './types';
-import { calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, topCategory, validateBackup, validateTx } from './finance';
+import type { AppSettings, Category, CurrencyCode, LanguageCode, ThemeMode, Transaction, TxType } from './types';
+import { DEFAULT_CATS, normalizeCategoryId } from './categories';
+import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
+import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
+import { calcTotals, currenciesIn, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, topCategory, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
-import { fmt, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
+import { displayDate, fmtMoney, fmtNum, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
 
-const DEFAULT_CATS: Category[] = [
-  { id: 'c1', label: 'حقوق', kind: 'income' },
-  { id: 'c2', label: 'درآمد جانبی', kind: 'income' },
-  { id: 'c3', label: 'خوراک', kind: 'expense' },
-  { id: 'c4', label: 'حمل‌ونقل', kind: 'expense' },
-  { id: 'c5', label: 'خرید', kind: 'expense' },
-  { id: 'c6', label: 'قبض', kind: 'expense' },
-  { id: 'c7', label: 'مسکن', kind: 'expense' },
-  { id: 'c8', label: 'درمان', kind: 'expense' },
-  { id: 'c9', label: 'آموزش', kind: 'expense' },
-  { id: 'c10', label: 'تفریح', kind: 'expense' },
-  { id: 'c11', label: 'سفر', kind: 'expense' },
-  { id: 'c12', label: 'اقساط', kind: 'expense' },
-  { id: 'c13', label: 'سرمایه‌گذاری', kind: 'expense' },
-  { id: 'c14', label: 'سایر', kind: 'both' },
-];
+const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
-const LS_THEME = 'dk-theme';
 const LS_FALLBACK = 'dk-txs-fallback';
 const LS_WIPED = 'dk-txs-wiped';
 
-function loadCats(): Category[] {
+function loadSettings(): AppSettings {
   try {
-    const s = localStorage.getItem(LS_CATS);
-    if (s) {
-      const a = JSON.parse(s);
-      if (Array.isArray(a) && a.length && a.every(c =>
-        c && typeof c.id === 'string' && typeof c.label === 'string' &&
-        (c.kind === 'income' || c.kind === 'expense' || c.kind === 'both')
-      )) return a as Category[];
+    const raw = localStorage.getItem(LS_SETTINGS);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return s;
     }
-  } catch { /* fall back to defaults */ }
+  } catch {}
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system' };
+}
+
+function loadCategories(): Category[] {
+  try {
+    const raw = localStorage.getItem(LS_CATS);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const custom = list.filter((c: any) => c && typeof c.id === 'string' && !DEFAULT_CATS.some(d => d.id === c.id) &&
+          typeof c.label === 'string' && c.label.trim() && (c.kind === 'income' || c.kind === 'expense' || c.kind === 'both'))
+          .map((c: any) => ({ id:c.id, label:c.label.trim(), kind:c.kind }));
+        return [...DEFAULT_CATS, ...custom];
+      }
+    }
+  } catch {}
   return DEFAULT_CATS;
 }
-function loadTheme(): ThemeMode {
-  try {
-    const s = localStorage.getItem(LS_THEME);
-    return s === 'light' || s === 'dark' || s === 'system' ? s : 'system';
-  } catch {
-    return 'system';
-  }
-}
-function applyTheme(m: ThemeMode) {
-  const root = document.documentElement;
-  if (m === 'system') {
-    const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-    root.setAttribute('data-theme', dark ? 'dark' : 'light');
-  } else {
-    root.setAttribute('data-theme', m);
-  }
-}
 
-type Tab = 'home' | 'txs' | 'reports' | 'settings';
-type Period = 'today' | 'week' | 'month' | '3m' | 'year' | 'custom';
-
-function periodRange(p: Period, customFrom: string, customTo: string): { from: string; to: string; label: string } {
-  const t = todayStr();
-  const local = (days: number) => {
-    const x = new Date();
-    x.setHours(12, 0, 0, 0);
-    x.setDate(x.getDate() + days);
-    return todayStr(x);
+function normalizeTransaction(raw: any, customCategories: Category[], defaultCurrency: CurrencyCode): Transaction | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const type = raw.type === 'income' || raw.type === 'expense' ? raw.type : null;
+  const currency = CURRENCY_MAP[raw.currency as CurrencyCode] ? raw.currency as CurrencyCode : defaultCurrency;
+  if (!type || typeof raw.id !== 'string' || !raw.id || typeof raw.amount !== 'number' || !Number.isFinite(raw.amount) || raw.amount <= 0) return null;
+  const categoryRaw = typeof raw.category === 'string' ? raw.category : '';
+  const normalizedCategory = normalizeCategoryId(categoryRaw);
+  const custom = customCategories.find(c => c.id === categoryRaw || c.label === categoryRaw);
+  const category = normalizedCategory !== categoryRaw ? normalizedCategory : (custom?.id ?? categoryRaw);
+  if (!category) return null;
+  if (typeof raw.title !== 'string' || !raw.title.trim() || raw.title.length > 120) return null;
+  if (typeof raw.date !== 'string' || typeof raw.time !== 'string' || typeof raw.description !== 'string') return null;
+  return {
+    id: raw.id,
+    type,
+    amount: raw.amount,
+    currency,
+    title: raw.title.trim(),
+    category,
+    date: raw.date,
+    time: raw.time,
+    description: raw.description,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowISO(),
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowISO()
   };
-  if (p === 'today') return { from: t, to: t, label: 'امروز' };
-  if (p === 'week') return { from: local(-6), to: t, label: 'هفت روز اخیر' };
-  if (p === 'month') return { from: t.slice(0, 7) + '-01', to: t, label: 'ماه جاری' };
-  if (p === '3m') return { from: local(-89), to: t, label: 'سه ماه اخیر' };
-  if (p === 'year') return { from: t.slice(0, 4) + '-01-01', to: t, label: 'امسال' };
-  return { from: customFrom, to: customTo, label: 'بازه دلخواه' };
 }
+
+function applyTheme(mode: ThemeMode) {
+  const dark = mode === 'dark' || (mode === 'system' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+}
+
+function periodRange(period: Period, from: string, to: string) {
+  const tday = todayStr();
+  const local = (days: number) => {
+    const d = new Date();
+    d.setHours(12,0,0,0);
+    d.setDate(d.getDate() + days);
+    return todayStr(d);
+  };
+  if (period === 'today') return { from:tday, to:tday, labelKey:'today' as const };
+  if (period === 'week') return { from:local(-6), to:tday, labelKey:'thisWeek' as const };
+  if (period === 'month') return { from:tday.slice(0,7) + '-01', to:tday, labelKey:'thisMonth' as const };
+  if (period === '3m') return { from:local(-89), to:tday, labelKey:'last3Months' as const };
+  if (period === 'year') return { from:tday.slice(0,4) + '-01-01', to:tday, labelKey:'thisYear' as const };
+  return { from, to, labelKey:'customRange' as const };
+}
+
+type Tab = 'home'|'txs'|'reports'|'settings';
+type Period = 'today'|'week'|'month'|'3m'|'year'|'custom';
 
 export default function App() {
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [cats, setCats] = useState<Category[]>(() => loadCategories());
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('home');
-  const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
-  const [cats, setCats] = useState<Category[]>(() => loadCats());
   const [toast, setToast] = useState('');
-  const [modal, setModal] = useState<{ open: boolean; preset: TxType; edit?: Transaction }>({ open: false, preset: 'expense' });
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [modal, setModal] = useState<{open:boolean;preset:TxType;edit?:Transaction}>({open:false,preset:'expense'});
+  const [confirmId, setConfirmId] = useState<string|null>(null);
+  const [detailId, setDetailId] = useState<string|null>(null);
   const [q, setQ] = useState('');
-  const [fType, setFType] = useState<'all' | TxType>('all');
+  const [fType, setFType] = useState<'all'|TxType>('all');
   const [fCat, setFCat] = useState('all');
+  const [fCurrency, setFCurrency] = useState<'all'|CurrencyCode>('all');
   const [fFrom, setFFrom] = useState('');
   const [fTo, setFTo] = useState('');
-  const [sort, setSort] = useState<'new' | 'old' | 'max' | 'min'>('new');
+  const [sort, setSort] = useState<'new'|'old'|'max'|'min'>('new');
   const [period, setPeriod] = useState<Period>('month');
-  const [cFrom, setCFrom] = useState(todayStr().slice(0, 7) + '-01');
+  const [cFrom, setCFrom] = useState(todayStr().slice(0,7) + '-01');
   const [cTo, setCTo] = useState(todayStr());
+  const [reportCurrency, setReportCurrency] = useState<CurrencyCode>(() => loadSettings().currency);
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
-  const [newCatKind, setNewCatKind] = useState<'income' | 'expense' | 'both'>('expense');
+  const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const say = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2600); };
+  const lang = settings.language;
+  const locale = localeForLanguage(lang);
+
+  const say = (m:string) => { setToast(m); window.setTimeout(() => setToast(''), 2800); };
 
   useEffect(() => {
-    applyTheme(theme);
-    try { localStorage.setItem(LS_THEME, theme); } catch { /* storage may be unavailable */ }
-  }, [theme]);
+    applyTheme(settings.theme);
+    try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch {}
+  }, [settings]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dir = RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
+    root.lang = lang;
+    document.title = t(lang,'appName');
+  }, [lang]);
+
   useEffect(() => {
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const fn = () => { 
-      try {
-        const s = localStorage.getItem(LS_THEME) as ThemeMode;
-        if (!s || s === 'system') applyTheme('system');
-      } catch { applyTheme('system'); }
-    };
+    const fn = () => { if (settings.theme === 'system') applyTheme('system'); };
     mq?.addEventListener?.('change', fn);
     return () => mq?.removeEventListener?.('change', fn);
-  }, []);
+  }, [settings.theme]);
+
   useEffect(() => {
-    try { localStorage.setItem(LS_CATS, JSON.stringify(cats)); } catch { /* storage may be unavailable */ }
+    if (settings.currency) setReportCurrency(settings.currency);
+  }, [settings.currency]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_CATS, JSON.stringify(cats)); } catch {}
   }, [cats]);
 
   useEffect(() => {
+    const onKey = (e:KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setModal({open:false,preset:'expense'});
+        setConfirmId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
     (async () => {
+      let loaded: Transaction[] = [];
       try {
         const wiped = localStorage.getItem(LS_WIPED) === '1';
-        const fb = localStorage.getItem(LS_FALLBACK);
-        if (wiped) {
-          setTxs([]);
-        } else if (fb) {
-          const arr = JSON.parse(fb);
-          if (Array.isArray(arr)) {
-            setTxs(arr.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
+        if (!wiped) {
+          const fb = localStorage.getItem(LS_FALLBACK);
+          if (fb) {
+            const raw = JSON.parse(fb);
+            if (Array.isArray(raw)) loaded = raw.map(x => normalizeTransaction(x,cats,settings.currency)).filter(Boolean) as Transaction[];
           } else {
-            throw new Error('Invalid local transaction backup');
+            const all = await dbGetAll();
+            loaded = all.map(x => normalizeTransaction(x,cats,settings.currency)).filter(Boolean) as Transaction[];
           }
-        } else {
-          const all = await dbGetAll();
-          setTxs(all.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
-          try { localStorage.setItem(LS_FALLBACK, JSON.stringify(all)); } catch { /* storage may be unavailable */ }
         }
       } catch {
         try {
           const all = await dbGetAll();
-          setTxs(all.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
-        } catch {
-          try {
-            const fb = localStorage.getItem(LS_FALLBACK);
-            if (fb) {
-              const arr = JSON.parse(fb);
-              if (Array.isArray(arr)) setTxs(arr);
-            }
-          } catch { /* keep empty state */ }
-        }
-      } finally {
-        setLoading(false);
+          loaded = all.map(x => normalizeTransaction(x,cats,settings.currency)).filter(Boolean) as Transaction[];
+        } catch {}
       }
+      loaded.sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
+      setTxs(loaded);
+      try {
+        if (loaded.length || localStorage.getItem(LS_WIPED) !== '1') localStorage.setItem(LS_FALLBACK,JSON.stringify(loaded));
+      } catch {}
+      setLoading(false);
     })();
   }, []);
-  useEffect(() => {
-    if (loading) return;
-    try { localStorage.setItem(LS_FALLBACK, JSON.stringify(txs)); } catch { /* storage may be unavailable */ }
-  }, [txs, loading]);
-
-  const totals = useMemo(() => calcTotals(txs), [txs]);
-  const mk = todayStr().slice(0, 7);
-  const monthTxs = useMemo(() => txs.filter(t => t.date.slice(0, 7) === mk), [txs, mk]);
-  const monthTotals = useMemo(() => calcTotals(monthTxs), [monthTxs]);
-  const last5 = useMemo(() => txs.slice(0, 5), [txs]);
-  const days7 = useMemo(() => lastNDays(7), []);
-  const trend7 = useMemo(() => groupByDay(txs, days7), [txs, days7]);
-  const max7 = Math.max(1, ...trend7.flatMap(x => [x.income, x.expense]));
 
   const filtered = useMemo(() => {
-    let r = [...txs];
-    if (fType !== 'all') r = r.filter(t => t.type === fType);
-    if (fCat !== 'all') r = r.filter(t => t.category === fCat);
-    if (fFrom) r = r.filter(t => t.date >= fFrom);
-    if (fTo) r = r.filter(t => t.date <= fTo);
-    if (q.trim()) { const s = q.trim(); r = r.filter(t => t.title.includes(s) || t.description.includes(s) || t.category.includes(s)); }
-    r.sort((a, b) => {
-      if (sort === 'new') return (b.date + b.time).localeCompare(a.date + a.time);
-      if (sort === 'old') return (a.date + a.time).localeCompare(b.date + b.time);
-      if (sort === 'max') return b.amount - a.amount;
-      return a.amount - b.amount;
+    let r = txs.filter(t =>
+      (fType === 'all' || t.type === fType) &&
+      (fCat === 'all' || t.category === fCat) &&
+      (fCurrency === 'all' || t.currency === fCurrency) &&
+      (!fFrom || t.date >= fFrom) &&
+      (!fTo || t.date <= fTo)
+    );
+    const needle = q.trim().toLocaleLowerCase(locale);
+    if (needle) {
+      r = r.filter(t => [t.title,t.description,categoryLabel(t.category,'',lang),t.currency].some(v => v.toLocaleLowerCase(locale).includes(needle)));
+    }
+    r.sort((a,b) => {
+      if (sort === 'new') return (b.date+b.time).localeCompare(a.date+a.time);
+      if (sort === 'old') return (a.date+a.time).localeCompare(b.date+b.time);
+      if (sort === 'max') return b.amount-a.amount;
+      return a.amount-b.amount;
     });
     return r;
-  }, [txs, q, fType, fCat, fFrom, fTo, sort]);
+  }, [txs,fType,fCat,fCurrency,fFrom,fTo,q,sort,lang,locale]);
 
-  const pr = periodRange(period, cFrom, cTo);
-  const reportTxs = useMemo(() => filterByDateRange(txs, pr.from, pr.to), [txs, pr.from, pr.to]);
-  const reportTotals = useMemo(() => calcTotals(reportTxs), [reportTxs]);
-  const dist = useMemo(() => groupByCategory(reportTxs, 'expense'), [reportTxs]);
-  const maxDist = Math.max(1, ...dist.map(x => x.total));
+  const currentTotals = useMemo(() => calcTotals(txs,settings.currency), [txs,settings.currency]);
+  const monthKey = todayStr().slice(0,7);
+  const monthTotals = useMemo(() => calcTotals(txs.filter(x => x.date.slice(0,7) === monthKey),settings.currency), [txs,settings.currency,monthKey]);
+  const days7 = useMemo(() => lastNDays(7), []);
+  const trend7 = useMemo(() => groupByDay(txs,days7,settings.currency), [txs,days7,settings.currency]);
+  const max7 = Math.max(1,...trend7.flatMap(x => [x.income,x.expense]));
+  const balances = useMemo(() => currenciesIn(txs).map(c => ({code:c, ...calcTotals(txs,c)})), [txs]);
+
+  const pr = periodRange(period,cFrom,cTo);
+  const reportTxs = useMemo(() => filterByDateRange(txs,pr.from,pr.to,reportCurrency), [txs,pr.from,pr.to,reportCurrency]);
+  const reportTotals = useMemo(() => calcTotals(reportTxs,reportCurrency), [reportTxs,reportCurrency]);
+  const dist = useMemo(() => groupByCategory(reportTxs,'expense',reportCurrency), [reportTxs,reportCurrency]);
+  const maxDist = Math.max(1,...dist.map(x => x.total));
   const repTrend = useMemo(() => {
-    if (period === '3m') return groupByMonth(reportTxs, lastNMonths(3));
-    if (period === 'year') return groupByMonth(reportTxs, lastNMonths(12));
+    if (period === '3m') return groupByMonth(reportTxs,lastNMonths(3),reportCurrency);
+    if (period === 'year') return groupByMonth(reportTxs,lastNMonths(12),reportCurrency);
     if (period === 'custom') {
       if (cFrom > cTo) return [];
       const start = new Date(cFrom + 'T12:00:00');
       const end = new Date(cTo + 'T12:00:00');
-      const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+      const days = Math.round((end.getTime()-start.getTime())/86400000)+1;
       if (days > 62) {
-        const months: string[] = [];
-        const cursor = new Date(start);
+        const months:string[]=[];
+        const cursor=new Date(start);
         cursor.setDate(1);
         while (cursor <= end) {
-          months.push(todayStr(cursor).slice(0, 7));
-          cursor.setMonth(cursor.getMonth() + 1);
+          months.push(cursor.getFullYear() + '-' + String(cursor.getMonth()+1).padStart(2,'0'));
+          cursor.setMonth(cursor.getMonth()+1);
         }
-        return groupByMonth(reportTxs, months);
+        return groupByMonth(reportTxs,months,reportCurrency);
       }
-      return groupByDay(reportTxs, lastNDays(Math.min(days, 14), end));
+      return groupByDay(reportTxs,lastNDays(Math.max(1,Math.min(days,14)),end),reportCurrency);
     }
-    if (period === 'today') return groupByDay(reportTxs, [todayStr()]);
-    if (period === 'week') return groupByDay(reportTxs, lastNDays(7));
-    return groupByDay(reportTxs, lastNDays(30));
-  }, [reportTxs, period, cFrom, cTo]);
-  const maxRep = Math.max(1, ...repTrend.flatMap(x => [x.income, x.expense]));
-  const customRangeError = period === 'custom' && cFrom > cTo ? 'تاریخ شروع نباید بعد از تاریخ پایان باشد.' : '';
+    if (period === 'today') return groupByDay(reportTxs,[todayStr()],reportCurrency);
+    if (period === 'week') return groupByDay(reportTxs,lastNDays(7),reportCurrency);
+    return groupByDay(reportTxs,lastNDays(30),reportCurrency);
+  }, [reportTxs,period,cFrom,cTo,reportCurrency]);
+  const maxRep = Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]));
+  const customRangeError = period === 'custom' && cFrom > cTo;
 
-  function setLocalTransactions(next: Transaction[]) {
+  function persistLocal(next:Transaction[]) {
     try {
       localStorage.removeItem(LS_WIPED);
-      localStorage.setItem(LS_FALLBACK, JSON.stringify(next));
-    } catch { /* state still remains in memory */ }
+      localStorage.setItem(LS_FALLBACK,JSON.stringify(next));
+    } catch {}
     setTxs(next);
   }
 
-  async function persistAdd(t: Transaction, isEdit: boolean) {
-    const rest = isEdit ? txs.filter(x => x.id !== t.id) : txs;
-    const next = [t, ...rest].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-    setLocalTransactions(next);
-    let dbSaved = true;
-    try { await dbPut(t); } catch { dbSaved = false; }
-    if (!dbSaved) say('تراکنش در پشتیبان محلی ذخیره شد؛ پایگاه داده دستگاه در دسترس نبود.');
+  async function persistTransaction(t:Transaction,isEdit:boolean) {
+    const rest=isEdit ? txs.filter(x => x.id !== t.id) : txs;
+    const next=[t,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+    persistLocal(next);
+    try { await dbPut(t); } catch { say(t('') as never); }
   }
 
-  async function removeTx(id: string) {
-    const next = txs.filter(x => x.id !== id);
-    setLocalTransactions(next);
-    try { await dbDel(id); } catch { /* local state remains authoritative */ }
+  async function removeTx(id:string) {
+    const next=txs.filter(x => x.id !== id);
+    persistLocal(next);
+    try { await dbDel(id); } catch {}
     setConfirmId(null);
-    say('تراکنش حذف شد.');
+    say(t(lang,'deleted'));
   }
 
   function exportJSON() {
-    const data = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), transactions: txs, categories: cats }, null, 2);
-    const b = new Blob([data], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(b); a.download = 'dakhl-kharj-backup.json'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    say('فایل پشتیبان دانلود شد.');
+    const payload={version:2,exportedAt:nowISO(),settings,categories:cats,transactions:txs};
+    const a=document.createElement('a');
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    a.href=URL.createObjectURL(blob); a.download='dakhl-kharj-backup-v2.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href),2000);
+    say(t(lang,'backupDownloaded'));
   }
-  function exportCSV() {
-    const csv = toCSV(txs.map(t => ({ ...t })));
-    const b = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(b); a.download = 'dakhl-kharj.csv'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    say('فایل اکسل (CSV) دانلود شد.');
+
+  function exportCSVFile() {
+    const rows=txs.map(x => ({...x, category:categoryLabel(x.category,x.category,lang), currency:x.currency}));
+    const blob=new Blob(['\ufeff'+toCSV(rows)],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='dakhl-kharj.csv'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href),2000);
+    say(t(lang,'csvDownloaded'));
   }
-  async function importFile(f: File) {
+
+  async function importFile(file:File) {
     try {
-      const txt = await f.text();
-      const obj = JSON.parse(txt);
-      const err = validateBackup(obj);
-      if (err) { say('فایل خراب است: ' + err); return; }
-      const rawList = (obj as { transactions: Transaction[] }).transactions;
-      const incomingCats = (obj as { categories?: Category[] }).categories;
-      const now = new Date().toISOString();
-      const list = rawList.map(t => ({
-        ...t,
-        createdAt: t.createdAt || now,
-        updatedAt: t.updatedAt || now,
-        description: t.description || '',
-      }));
-      const sorted = [...list].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+      const obj=JSON.parse(await file.text());
+      const err=validateBackup(obj);
+      if (err) { say(t(lang,'invalidFile')+' '+err); return; }
+      const rawCats=Array.isArray(obj.categories) ? obj.categories : [];
+      const custom=rawCats.filter((c:any) => c && typeof c.id==='string' && !DEFAULT_CATS.some(d => d.id===c.id) && typeof c.label==='string' && c.label.trim());
+      const nextCats=[...DEFAULT_CATS,...custom] as Category[];
+      const list=(obj.transactions as any[]).map(x => normalizeTransaction(x,nextCats,settings.currency)).filter(Boolean) as Transaction[];
+      const sorted=list.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
       localStorage.removeItem(LS_WIPED);
-      localStorage.setItem(LS_FALLBACK, JSON.stringify(sorted));
+      localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
+      setCats(nextCats);
       setTxs(sorted);
-      if (incomingCats && Array.isArray(incomingCats) && incomingCats.length) setCats(incomingCats);
-      try {
-        await dbBulkPut(sorted);
-      } catch {
-        say('اطلاعات در پشتیبان محلی بازیابی شد؛ پایگاه داده دستگاه در دسترس نبود.');
-        return;
-      }
-      say('بازیابی با موفقیت انجام شد.');
-    } catch { say('فایل خراب است و اطلاعات فعلی حفظ شد.'); }
+      try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
+      say(t(lang,'restored'));
+    } catch { say(t(lang,'invalidFileKeepData')); }
   }
 
   function addCategory() {
-    const v = newCat.trim();
-    if (!v) { say('نام دسته را وارد کنید.'); return; }
-    if (cats.some(c => c.label === v)) { say('این دسته از قبل وجود دارد.'); return; }
-    setCats(p => [...p, { id: uid(), label: v, kind: newCatKind }]);
+    const label=newCat.trim();
+    if (!label) { say(t(lang,'categoryNameRequired')); return; }
+    if (label.length>80) return;
+    if (cats.some(c => c.label.toLocaleLowerCase(locale) === label.toLocaleLowerCase(locale))) { say(t(lang,'categoryExists')); return; }
+    setCats(prev => [...prev,{id:'cat-'+uid(),label,kind:newCatKind}]);
     setNewCat('');
-    say('دسته اضافه شد.');
+    say(t(lang,'categoryAdded'));
   }
-  function delCategory(id: string) {
-    const c = cats.find(x => x.id === id);
+
+  function delCategory(id:string) {
+    const c=cats.find(x => x.id===id);
     if (!c) return;
-    if (DEFAULT_CATS.some(x => x.id === c.id)) { say('دسته‌های پیش‌فرض قابل حذف نیستند.'); return; }
-    if (txs.some(t => t.category === c.label)) { say('این دسته تراکنش دارد و حذف آن مجاز نیست.'); return; }
-    setCats(p => p.filter(x => x.id !== id));
-    say('دسته حذف شد.');
+    if (c.system) { say(t(lang,'defaultCategoryCannotDelete')); return; }
+    if (txs.some(x => x.category===id)) { say(t(lang,'categoryHasTransactions')); return; }
+    setCats(prev => prev.filter(x => x.id!==id));
+    say(t(lang,'categoryDeleted'));
   }
 
   async function wipeAll() {
     try {
-      localStorage.setItem(LS_WIPED, '1');
+      localStorage.setItem(LS_WIPED,'1');
       localStorage.removeItem(LS_FALLBACK);
       localStorage.removeItem(LS_CATS);
-    } catch { /* in-memory state still gets cleared */ }
+    } catch {}
     setTxs([]);
     setCats(DEFAULT_CATS);
     setWipeStep(0);
-    try {
-      await dbClear();
-    } catch {
-      /* The tombstone keeps stale IndexedDB data from returning on next launch. */
-    }
-    say('همه تراکنش‌ها و دسته‌های سفارشی حذف شد.');
+    try { await dbClear(); } catch {}
+    say(t(lang,'allDataDeleted'));
   }
 
-  if (loading) return <div className="wrap"><div className="empty">در حال بارگذاری…</div></div>;
+  const systemCats=cats.filter(c => c.system);
+  const customCats=cats.filter(c => !c.system);
 
-  return (
-    <>
-      <header className="top">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true"><span>ت</span></div>
-          <div>
-            <h1>دخل‌وخرج من</h1>
-            <p>مدیریت ساده و آفلاین</p>
-          </div>
-        </div>
-        <button className="btn ghost theme-button" aria-label="تغییر حالت نمایش" onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}>
-          <span aria-hidden="true">◐</span>
-          {theme === 'dark' ? 'تاریک' : theme === 'light' ? 'روشن' : 'سیستم'}
-        </button>
-      </header>
-      {toast ? <div className="toast"><div>{toast}</div></div> : null}
-      <div className="wrap">
-        {tab === 'home' && (
-          <>
-            <section className="hero-card">
-              <div className="hero-orb hero-orb-one" aria-hidden="true" />
-              <div className="hero-orb hero-orb-two" aria-hidden="true" />
-              <div className="hero-content">
-                <div>
-                  <div className="hero-label">موجودی فعلی</div>
-                  <div className="hero-balance">{fmt(totals.balance)}</div>
-                  <div className="hero-note">درآمد و هزینه‌های ثبت‌شده روی همین دستگاه</div>
-                </div>
-                <div className="hero-chip" aria-hidden="true">ت</div>
-              </div>
-              <div className="hero-stats">
-                <div><span>درآمد کل</span><b>{fmt(totals.income)}</b></div>
-                <div><span>هزینه کل</span><b>{fmt(totals.expense)}</b></div>
-                <div><span>تراکنش</span><b>{totals.count.toLocaleString('fa-IR')}</b></div>
-              </div>
-            </section>
-            <div className="quick-actions">
-              <button className="action-card income-action" onClick={() => setModal({ open: true, preset: 'income' })}>
-                <span className="action-icon" aria-hidden="true">＋</span>
-                <span><b>ثبت درآمد</b><small>ورودی جدید</small></span>
-              </button>
-              <button className="action-card expense-action" onClick={() => setModal({ open: true, preset: 'expense' })}>
-                <span className="action-icon" aria-hidden="true">−</span>
-                <span><b>ثبت هزینه</b><small>خروجی جدید</small></span>
-              </button>
-            </div>
-            <div className="grid cards">
-              <div className="card stat-card"><div className="k">درآمد ماه جاری</div><div className="v in">{fmt(monthTotals.income)}</div></div>
-              <div className="card stat-card"><div className="k">هزینه ماه جاری</div><div className="v out">{fmt(monthTotals.expense)}</div></div>
-              <div className="card stat-card"><div className="k">مانده ماه جاری</div><div className="v bal">{fmt(monthTotals.balance)}</div></div>
-            </div>
-            <h2>نمودار هفت روز اخیر</h2>
-            {txs.length === 0 ? <div className="empty">هنوز تراکنشی ثبت نشده است. از دکمه‌های بالا اولین تراکنش را ثبت کنید.</div> : (
-              <div className="card">
-                <div className="bars">
-                  {trend7.map(d => (
-                    <div className="bar" key={d.date}>
-                      <div className="col" title={'درآمد ' + d.income} style={{ height: Math.max(3, (d.income / max7) * 52), background: '#16a34a' }} />
-                      <div className="col" title={'هزینه ' + d.expense} style={{ height: Math.max(3, (d.expense / max7) * 52), background: '#dc2626' }} />
-                      <span className="muted" style={{ fontSize: 10 }}>{d.date.slice(5)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="muted">سبز: درآمد — قرمز: هزینه</div>
-              </div>
-            )}
-            <h2>خلاصه مالی</h2>
-            <div className="card">
-              <div>تعداد کل تراکنش‌ها: <b>{totals.count.toLocaleString('fa-IR')}</b></div>
-              <div className="muted">بیشترین دسته هزینه: {topCategory(txs)}</div>
-            </div>
-            <h2>آخرین تراکنش‌ها</h2>
-            {last5.length === 0 ? <div className="empty">تراکنشی وجود ندارد.</div> : (
-              <div className="list">
-                {last5.map(t => (
-                  <div className="item" key={t.id}>
-                    <div><b>{t.title}</b> <span className={`badge ${t.type === 'income' ? 'in' : 'out'}`}>{t.type === 'income' ? 'درآمد' : 'هزینه'}</span><div className="muted">{t.category} — {t.date} {t.time}</div></div>
-                    <div style={{ textAlign: 'left' }}><b style={{ color: t.type === 'income' ? 'var(--ok)' : 'var(--bad)' }}>{fmt(t.amount)}</b></div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+  if (loading) return <div className="wrap"><div className="empty">{t(lang,'noneYet')}</div></div>;
 
-        {tab === 'txs' && (
-          <>
-            <h2>تراکنش‌ها</h2>
-            <div className="toolbar">
-              <input placeholder="جستجو…" value={q} onChange={e => setQ(e.target.value)} />
-              <select value={fType} onChange={e => setFType(e.target.value as 'all' | TxType)}>
-                <option value="all">همه انواع</option><option value="income">درآمد</option><option value="expense">هزینه</option>
-              </select>
-              <select value={fCat} onChange={e => setFCat(e.target.value)}>
-                <option value="all">همه دسته‌ها</option>{cats.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
-              </select>
-              <select value={sort} onChange={e => setSort(e.target.value as 'new' | 'old' | 'max' | 'min')}>
-                <option value="new">جدیدترین</option><option value="old">قدیمی‌ترین</option><option value="max">بیشترین مبلغ</option><option value="min">کمترین مبلغ</option>
-              </select>
-            </div>
-            <div className="toolbar">
-              <div><label>از تاریخ</label><input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} /></div>
-              <div><label>تا تاریخ</label><input type="date" value={fTo} onChange={e => setFTo(e.target.value)} /></div>
-              <div style={{ display: 'flex', alignItems: 'flex-end' }}><button className="btn ghost" onClick={() => { setQ(''); setFType('all'); setFCat('all'); setFFrom(''); setFTo(''); }}>پاک کردن فیلتر</button></div>
-            </div>
-            {filtered.length === 0 ? <div className="empty">موردی یافت نشد. فیلترها را تغییر دهید یا تراکنش جدید ثبت کنید.</div> : (
-              <div className="list">
-                {filtered.map(t => (
-                  <div className="item" key={t.id}>
-                    <div style={{ flex: 1 }}>
-                      <b>{t.title}</b> <span className={`badge ${t.type === 'income' ? 'in' : 'out'}`}>{t.type === 'income' ? 'درآمد' : 'هزینه'}</span>
-                      <div className="muted">{t.category} — {t.date} {t.time} — {fmt(t.amount)}</div>
-                      {detailId === t.id && <div style={{ marginTop: 6, fontSize: 13 }}>{t.description ? t.description : 'بدون توضیح'}</div>}
-                    </div>
-                    <div className="row">
-                      <button className="btn ghost" onClick={() => setDetailId(detailId === t.id ? null : t.id)}>جزئیات</button>
-                      <button className="btn ghost" onClick={() => setModal({ open: true, preset: t.type, edit: t })}>ویرایش</button>
-                      <button className="btn danger" onClick={() => setConfirmId(t.id)}>حذف</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {tab === 'reports' && (
-          <>
-            <h2>گزارش‌ها — {pr.label}</h2>
-            <div className="row">
-              {(['today', 'week', 'month', '3m', 'year', 'custom'] as Period[]).map(p => (
-                <button key={p} className={period === p ? 'btn' : 'btn ghost'} onClick={() => setPeriod(p)}>
-                  {p === 'today' ? 'امروز' : p === 'week' ? 'این هفته' : p === 'month' ? 'این ماه' : p === '3m' ? 'سه ماه اخیر' : p === 'year' ? 'امسال' : 'بازه دلخواه'}
-                </button>
-              ))}
-            </div>
-            {period === 'custom' && (
-              <div className="toolbar">
-                <div><label>از تاریخ</label><input type="date" value={cFrom} onChange={e => setCFrom(e.target.value)} /></div>
-                <div><label>تا تاریخ</label><input type="date" value={cTo} onChange={e => setCTo(e.target.value)} /></div>
-              </div>
-            )}
-            {customRangeError ? <div className="err">{customRangeError}</div> : reportTxs.length === 0 ? <div className="empty">در این بازه داده‌ای وجود ندارد.</div> : (
-              <>
-                <div className="grid cards" style={{ marginTop: 10 }}>
-                  <div className="card"><div className="k">مجموع درآمد</div><div className="v in">{fmt(reportTotals.income)}</div></div>
-                  <div className="card"><div className="k">مجموع هزینه</div><div className="v out">{fmt(reportTotals.expense)}</div></div>
-                  <div className="card"><div className="k">مانده</div><div className="v bal">{fmt(reportTotals.balance)}</div></div>
-                  <div className="card"><div className="k">تعداد تراکنش</div><div className="v">{reportTotals.count.toLocaleString('fa-IR')}</div></div>
-                  <div className="card"><div className="k">بیشترین دسته هزینه</div><div className="v">{topCategory(reportTxs)}</div></div>
-                </div>
-                <h3>روند درآمد و هزینه</h3>
-                <div className="card">
-                  <div className="bars">
-                    {repTrend.map(d => (
-                      <div className="bar" key={d.date}>
-                        <div className="col" style={{ height: Math.max(3, (d.income / maxRep) * 48), background: '#16a34a' }} />
-                        <div className="col" style={{ height: Math.max(3, (d.expense / maxRep) * 48), background: '#dc2626' }} />
-                        <span className="muted" style={{ fontSize: 9 }}>{d.date.replace('-', '/')}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <h3>توزیع هزینه بر اساس دسته</h3>
-                <div className="card grid">
-                  {dist.map(x => (
-                    <div key={x.category}>
-                      <div className="row" style={{ justifyContent: 'space-between' }}><span>{x.category}</span><b>{fmt(x.total)}</b></div>
-                      <div className="hbar"><i style={{ width: Math.round((x.total / maxDist) * 100) + '%' }} /></div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {tab === 'settings' && (
-          <>
-            <h2>تنظیمات</h2>
-            <div className="card">
-              <h3>حالت نمایش</h3>
-              <div className="row">
-                {(['light', 'dark', 'system'] as ThemeMode[]).map(m => (
-                  <button key={m} className={theme === m ? 'btn' : 'btn ghost'} onClick={() => { setTheme(m); say('تم تغییر کرد.'); }}>
-                    {m === 'light' ? 'روشن' : m === 'dark' ? 'تاریک' : 'سیستم'}
-                  </button>
-                ))}
-              </div>
-              <div className="muted" style={{ marginTop: 6 }}>واحد پول: تومان</div>
-            </div>
-            <div className="card" style={{ marginTop: 10 }}>
-              <h3>مدیریت دسته‌بندی‌ها</h3>
-              <div className="list">
-                {cats.map(c => (
-                  <div className="item" key={c.id}><span>{c.label} <span className="muted">({c.kind === 'income' ? 'درآمد' : c.kind === 'expense' ? 'هزینه' : 'هر دو'})</span></span><button className="btn ghost" onClick={() => delCategory(c.id)}>حذف</button></div>
-                ))}
-              </div>
-              <div className="row" style={{ marginTop: 8 }}>
-                <input placeholder="نام دسته جدید" value={newCat} onChange={e => setNewCat(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
-                <select value={newCatKind} onChange={e => setNewCatKind(e.target.value as 'income' | 'expense' | 'both')} style={{ maxWidth: 140 }}>
-                  <option value="expense">هزینه</option><option value="income">درآمد</option><option value="both">هر دو</option>
-                </select>
-                <button className="btn" onClick={addCategory}>افزودن</button>
-              </div>
-            </div>
-            <div className="card" style={{ marginTop: 10 }}>
-              <h3>پشتیبان‌گیری و بازیابی</h3>
-              <div className="row">
-                <button className="btn" onClick={exportJSON}>دانلود پشتیبان (JSON)</button>
-                <button className="btn ghost" onClick={exportCSV}>خروجی اکسل (CSV)</button>
-                <button className="btn ghost" onClick={() => fileRef.current?.click()}>وارد کردن فایل</button>
-                <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} />
-              </div>
-            </div>
-            <div className="card" style={{ marginTop: 10 }}>
-              <h3>حذف تمام اطلاعات</h3>
-              {wipeStep === 0 ? <button className="btn danger" onClick={() => setWipeStep(1)}>حذف همه اطلاعات</button> : wipeStep === 1 ? (
-                <><div className="err">این کار همه تراکنش‌ها و دسته‌های سفارشی را حذف می‌کند و قابل بازگشت نیست.</div><div className="row"><button className="btn danger" onClick={() => setWipeStep(2)}>بله، مطمئنم</button><button className="btn ghost" onClick={() => setWipeStep(0)}>انصراف</button></div></>
-              ) : (
-                <><div className="err">تأیید نهایی: همه تراکنش‌ها و دسته‌های سفارشی حذف می‌شوند.</div><div className="row"><button className="btn danger" onClick={wipeAll}>تأیید نهایی حذف</button><button className="btn ghost" onClick={() => setWipeStep(0)}>انصراف</button></div></>
-              )}
-            </div>
-            <div className="card" style={{ marginTop: 10 }}>
-              <h3>درباره</h3>
-              <div className="muted">دخل‌وخرج من — نسخه ۱٫۰٫۰ — مدیریت ساده درآمد و هزینه، آفلاین و بدون نیاز به اینترنت.</div>
-            </div>
-          </>
-        )}
+  return <>
+    <header className="top">
+      <div className="brand">
+        <img className="brand-mark-img" src="./icon.svg" alt="" />
+        <div><h1>{t(lang,'appName')}</h1><p>{t(lang,'tagline')}</p></div>
       </div>
+      <div className="row">
+        <button className="btn ghost" onClick={() => setSettings(s => ({...s,theme:s.theme==='dark'?'light':s.theme==='light'?'system':'dark'}))}>
+          {settings.theme==='dark'?t(lang,'dark'):settings.theme==='light'?t(lang,'light'):t(lang,'system')}
+        </button>
+      </div>
+    </header>
 
-      <nav className="nav" aria-label="ناوبری اصلی">
-        <button className={tab === 'home' ? 'on' : ''} onClick={() => setTab('home')}><span aria-hidden="true">⌂</span><small>خانه</small></button>
-        <button className={tab === 'txs' ? 'on' : ''} onClick={() => setTab('txs')}><span aria-hidden="true">▤</span><small>تراکنش‌ها</small></button>
-        <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}><span aria-hidden="true">◔</span><small>گزارش‌ها</small></button>
-        <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}><span aria-hidden="true">⚙</span><small>تنظیمات</small></button>
-      </nav>
+    {toast && <div className="toast"><div>{toast}</div></div>}
 
-      {modal.open && <TxModal preset={modal.preset} edit={modal.edit} cats={cats} onClose={() => setModal({ open: false, preset: 'expense' })} onSave={async (t, isEdit) => { await persistAdd(t, isEdit); setModal({ open: false, preset: 'expense' }); say(isEdit ? 'تراکنش ویرایش شد.' : 'تراکنش ثبت شد.'); }} />}
-
-      {confirmId && (
-        <div className="modal" onClick={() => setConfirmId(null)}>
-          <div className="sheet" onClick={e => e.stopPropagation()}>
-            <h3>حذف تراکنش</h3>
-            <p>آیا از حذف این تراکنش مطمئن هستید؟</p>
-            <div className="row"><button className="btn danger" onClick={() => removeTx(confirmId)}>بله، حذف شود</button><button className="btn ghost" onClick={() => setConfirmId(null)}>انصراف</button></div>
+    <main className="wrap">
+      {tab==='home' && <>
+        <section className="hero-card">
+          <div className="hero-orb hero-orb-one" aria-hidden="true" />
+          <div className="hero-orb hero-orb-two" aria-hidden="true" />
+          <div className="hero-content">
+            <div>
+              <div className="hero-label">{t(lang,'currentBalance')} · {CURRENCIES.find(x => x.code===settings.currency)?.names[lang]}</div>
+              <div className="hero-balance">{fmtMoney(currentTotals.balance,settings.currency,locale)}</div>
+              <div className="hero-note">{t(lang,'recordedOnDevice')}</div>
+            </div>
+            <img className="hero-chip-img" src="./icon.svg" alt="" />
           </div>
+          <div className="hero-stats">
+            <div><span>{t(lang,'totalIncome')}</span><b>{fmtMoney(currentTotals.income,settings.currency,locale)}</b></div>
+            <div><span>{t(lang,'totalExpense')}</span><b>{fmtMoney(currentTotals.expense,settings.currency,locale)}</b></div>
+            <div><span>{t(lang,'transactions')}</span><b>{fmtNum(currentTotals.count,locale)}</b></div>
+          </div>
+        </section>
+
+        <div className="quick-actions">
+          <button className="action-card income-action" onClick={() => setModal({open:true,preset:'income'})}><span className="action-icon">＋</span><span><b>{t(lang,'registerIncome')}</b><small>{t(lang,'newInput')}</small></span></button>
+          <button className="action-card expense-action" onClick={() => setModal({open:true,preset:'expense'})}><span className="action-icon">−</span><span><b>{t(lang,'registerExpense')}</b><small>{t(lang,'newOutput')}</small></span></button>
         </div>
-      )}
-    </>
-  );
+
+        <div className="grid cards">
+          <div className="card stat-card"><div className="k">{t(lang,'currentMonthIncome')}</div><div className="v in">{fmtMoney(monthTotals.income,settings.currency,locale)}</div></div>
+          <div className="card stat-card"><div className="k">{t(lang,'currentMonthExpense')}</div><div className="v out">{fmtMoney(monthTotals.expense,settings.currency,locale)}</div></div>
+          <div className="card stat-card"><div className="k">{t(lang,'currentMonthBalance')}</div><div className="v bal">{fmtMoney(monthTotals.balance,settings.currency,locale)}</div></div>
+        </div>
+
+        <h2>{t(lang,'last7Days')}</h2>
+        <div className="card">
+          <div className="bars">
+            {trend7.map(d => <div className="bar" key={d.date}>
+              <div className="col income-bar" style={{height:Math.max(3,(d.income/max7)*52)}} title={t(lang,'income')+' '+fmtMoney(d.income,settings.currency,locale)} />
+              <div className="col expense-bar" style={{height:Math.max(3,(d.expense/max7)*52)}} title={t(lang,'expense')+' '+fmtMoney(d.expense,settings.currency,locale)} />
+              <span className="muted" style={{fontSize:10}}>{d.date.slice(5)}</span>
+            </div>)}
+          </div>
+          <div className="muted">{t(lang,'greenIncomeRedExpense')}</div>
+        </div>
+
+        <h2>{t(lang,'financialSummary')}</h2>
+        <div className="card">
+          <div>{t(lang,'totalTransactions')}: <b>{fmtNum(currentTotals.count,locale)}</b></div>
+          <div className="muted">{t(lang,'topExpenseCategory')}: {topCategory(txs,settings.currency)==='—'?'—':categoryLabel(topCategory(txs,settings.currency),'',lang)}</div>
+          <div className="currency-note">{t(lang,'currencyNote')}</div>
+        </div>
+
+        {balances.length>0 && <><h2>{t(lang,'currencySummary')}</h2><div className="grid currency-grid">
+          {balances.map(b => <div className="card" key={b.code}>
+            <div className="row space"><b>{CURRENCY_MAP[b.code].names[lang]}</b><span className="muted">{b.code}</span></div>
+            <div className="v bal">{fmtMoney(b.balance,b.code,locale)}</div>
+            <div className="muted">{t(lang,'totalIncome')}: {fmtMoney(b.income,b.code,locale)} · {t(lang,'totalExpense')}: {fmtMoney(b.expense,b.code,locale)}</div>
+          </div>)}
+        </div></>}
+
+        <h2>{t(lang,'latestTransactions')}</h2>
+        {txs.length===0 ? <div className="empty">{t(lang,'noneYet')} {t(lang,'registerFirst')}</div> :
+          <div className="list">{txs.slice(0,5).map(x => <div className="item" key={x.id}>
+            <div><b>{x.title}</b> <span className={'badge '+(x.type==='income'?'in':'out')}>{x.type==='income'?t(lang,'income'):t(lang,'expense')}</span>
+              <div className="muted">{categoryLabel(x.category,x.category,lang)} · {displayDate(x.date,locale)} {x.time} · {CURRENCY_MAP[x.currency].names[lang]}</div>
+            </div>
+            <b className={x.type==='income'?'money-in':'money-out'}>{fmtMoney(x.amount,x.currency,locale)}</b>
+          </div>)}</div>}
+      </>}
+
+      {tab==='txs' && <>
+        <h2>{t(lang,'transactionsTitle')}</h2>
+        <div className="toolbar">
+          <input aria-label={t(lang,'search')} placeholder={t(lang,'search')} value={q} onChange={e => setQ(e.target.value)} />
+          <select value={fType} onChange={e => setFType(e.target.value as 'all'|TxType)}><option value="all">{t(lang,'allTypes')}</option><option value="income">{t(lang,'income')}</option><option value="expense">{t(lang,'expense')}</option></select>
+          <select value={fCat} onChange={e => setFCat(e.target.value)}><option value="all">{t(lang,'allCategories')}</option>{cats.map(c => <option value={c.id} key={c.id}>{categoryLabel(c.id,c.label,lang)}</option>)}</select>
+          <select value={fCurrency} onChange={e => setFCurrency(e.target.value as 'all'|CurrencyCode)}><option value="all">{t(lang,'allCurrencies')}</option>{CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}</select>
+          <select value={sort} onChange={e => setSort(e.target.value as any)}><option value="new">{t(lang,'newest')}</option><option value="old">{t(lang,'oldest')}</option><option value="max">{t(lang,'highestAmount')}</option><option value="min">{t(lang,'lowestAmount')}</option></select>
+        </div>
+        <div className="toolbar date-tools">
+          <div><label>{t(lang,'fromDate')}</label><input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} /></div>
+          <div><label>{t(lang,'toDate')}</label><input type="date" value={fTo} onChange={e => setFTo(e.target.value)} /></div>
+          <div className="align-end"><button className="btn ghost" onClick={() => {setQ('');setFType('all');setFCat('all');setFCurrency('all');setFFrom('');setFTo('');setSort('new')}}>{t(lang,'clearFilters')}</button></div>
+        </div>
+        {filtered.length===0 ? <div className="empty">{t(lang,'noMatch')} {t(lang,'changeFilters')}</div> :
+          <div className="list">{filtered.map(x => <div className="item" key={x.id}>
+            <div style={{flex:1}}><b>{x.title}</b> <span className={'badge '+(x.type==='income'?'in':'out')}>{x.type==='income'?t(lang,'income'):t(lang,'expense')}</span>
+              <div className="muted">{categoryLabel(x.category,x.category,lang)} · {displayDate(x.date,locale)} {x.time} · {CURRENCY_MAP[x.currency].names[lang]}</div>
+              {detailId===x.id && <div className="detail">{x.description || '—'}</div>}
+            </div>
+            <div className="row item-actions">
+              <b className={x.type==='income'?'money-in':'money-out'}>{fmtMoney(x.amount,x.currency,locale)}</b>
+              <button className="btn ghost" onClick={() => setDetailId(detailId===x.id?null:x.id)}>{t(lang,'details')}</button>
+              <button className="btn ghost" onClick={() => setModal({open:true,preset:x.type,edit:x})}>{t(lang,'edit')}</button>
+              <button className="btn danger" onClick={() => setConfirmId(x.id)}>{t(lang,'delete')}</button>
+            </div>
+          </div>)}</div>}
+      </>}
+
+      {tab==='reports' && <>
+        <h2>{t(lang,'reports')} — {t(lang,pr.labelKey)} — {CURRENCY_MAP[reportCurrency].names[lang]}</h2>
+        <div className="row">
+          {(['today','week','month','3m','year','custom'] as Period[]).map(p => <button key={p} className={period===p?'btn':'btn ghost'} onClick={() => setPeriod(p)}>
+            {p==='today'?t(lang,'today'):p==='week'?t(lang,'thisWeek'):p==='month'?t(lang,'thisMonth'):p==='3m'?t(lang,'last3Months'):p==='year'?t(lang,'thisYear'):t(lang,'customRange')}
+          </button>)}
+        </div>
+        <div className="toolbar report-controls">
+          <div><label>{t(lang,'currency')}</label><select value={reportCurrency} onChange={e => setReportCurrency(e.target.value as CurrencyCode)}>{CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}</select></div>
+          {period==='custom' && <><div><label>{t(lang,'fromDate')}</label><input type="date" value={cFrom} onChange={e => setCFrom(e.target.value)} /></div><div><label>{t(lang,'toDate')}</label><input type="date" value={cTo} onChange={e => setCTo(e.target.value)} /></div></>}
+        </div>
+        <div className="currency-note">{t(lang,'noAutoConversion')}</div>
+        {customRangeError ? <div className="err">{t(lang,'rangeStartAfterEnd')}</div> : reportTxs.length===0 ? <div className="empty">{t(lang,'noDataInRange')}</div> :
+          <>
+            <div className="grid cards">
+              <div className="card"><div className="k">{t(lang,'totalIncomeReport')}</div><div className="v in">{fmtMoney(reportTotals.income,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'totalExpenseReport')}</div><div className="v out">{fmtMoney(reportTotals.expense,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'balance')}</div><div className="v bal">{fmtMoney(reportTotals.balance,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'transactionCount')}</div><div className="v">{fmtNum(reportTotals.count,locale)}</div></div>
+            </div>
+            <h3>{t(lang,'last7Days')}</h3>
+            <div className="card"><div className="bars">
+              {repTrend.map(d => <div className="bar" key={d.date}>
+                <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*48)}} />
+                <div className="col expense-bar" style={{height:Math.max(3,(d.expense/maxRep)*48)}} />
+                <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
+              </div>)}
+            </div></div>
+            <h3>{t(lang,'expenseDistribution')}</h3>
+            <div className="card grid">{dist.map(x => <div key={x.category}>
+              <div className="row space"><span>{categoryLabel(x.category,x.category,lang)}</span><b>{fmtMoney(x.total,reportCurrency,locale)}</b></div>
+              <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
+            </div>)}</div>
+          </>}
+      </>}
+
+      {tab==='settings' && <>
+        <h2>{t(lang,'settings')}</h2>
+        <div className="card">
+          <h3>{t(lang,'language')}</h3>
+          <select value={lang} onChange={e => { const next=e.target.value as LanguageCode; setSettings(s=>({...s,language:next})); say(t(next,'languageReload')); }}>
+            {(Object.keys(LANGUAGE_NAMES) as LanguageCode[]).map(x => <option value={x} key={x}>{LANGUAGE_NAMES[x]}</option>)}
+          </select>
+          <h3>{t(lang,'defaultCurrency')}</h3>
+          <select value={settings.currency} onChange={e => setSettings(s=>({...s,currency:e.target.value as CurrencyCode}))}>
+            {CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}
+          </select>
+          <div className="currency-note">{t(lang,'selectedCurrency')}: {CURRENCY_MAP[settings.currency].names[lang]} ({settings.currency})</div>
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
+          <h3>{t(lang,'appearance')}</h3>
+          <div className="row">{(['light','dark','system'] as ThemeMode[]).map(m => <button key={m} className={settings.theme===m?'btn':'btn ghost'} onClick={() => {setSettings(s=>({...s,theme:m}));say(t(lang,'themeChanged'))}}>{t(lang,m)}</button>)}</div>
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
+          <h3>{t(lang,'manageCategories')}</h3>
+          <div className="list">{systemCats.map(c => <div className="item" key={c.id}><span>{categoryLabel(c.id,c.label,lang)} <span className="muted">({c.kind==='income'?t(lang,'income'):c.kind==='expense'?t(lang,'expense'):t(lang,'both')})</span></span><span className="muted">✓</span></div>)}</div>
+          {customCats.length>0 && <><h3>{t(lang,'customCategory')}</h3><div className="list">{customCats.map(c => <div className="item" key={c.id}><span>{c.label}</span><button className="btn ghost" onClick={() => delCategory(c.id)}>{t(lang,'delete')}</button></div>)}</div></>}
+          <div className="row" style={{marginTop:8}}><input maxLength={80} placeholder={t(lang,'addCategoryName')} value={newCat} onChange={e => setNewCat(e.target.value)} style={{flex:1,minWidth:140}}/><select value={newCatKind} onChange={e => setNewCatKind(e.target.value as any)} style={{maxWidth:160}}><option value="expense">{t(lang,'expense')}</option><option value="income">{t(lang,'income')}</option><option value="both">{t(lang,'both')}</option></select><button className="btn" onClick={addCategory}>{t(lang,'add')}</button></div>
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
+          <h3>{t(lang,'backupRestore')}</h3>
+          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={() => fileRef.current?.click()}>{t(lang,'importFile')}</button></div>
+          <input ref={fileRef} type="file" accept="application/json,.json" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
+          <div className="currency-note">{t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
+          <h3>{t(lang,'deleteAllData')}</h3>
+          {wipeStep===0 ? <button className="btn danger" onClick={() => setWipeStep(1)}>{t(lang,'deleteAllData')}</button> :
+            wipeStep===1 ? <><div className="err">{t(lang,'deleteAllWarning')}</div><div className="row"><button className="btn danger" onClick={() => setWipeStep(2)}>{t(lang,'confirmSure')}</button><button className="btn ghost" onClick={() => setWipeStep(0)}>{t(lang,'cancel')}</button></div></> :
+            <><div className="err">{t(lang,'finalDeleteWarning')}</div><div className="row"><button className="btn danger" onClick={() => void wipeAll()}>{t(lang,'finalDelete')}</button><button className="btn ghost" onClick={() => setWipeStep(0)}>{t(lang,'cancel')}</button></div></>}
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
+          <h3>{t(lang,'about')}</h3>
+          <div className="muted">{t(lang,'versionOffline')}</div>
+          <div className="muted" style={{marginTop:6}}>{t(lang,'openSource')}</div>
+        </div>
+      </>}
+    </main>
+
+    <nav className="nav" aria-label={t(lang,'mainNavigation')}>
+      <button className={tab==='home'?'on':''} onClick={() => setTab('home')}><span>⌂</span><small>{t(lang,'home')}</small></button>
+      <button className={tab==='txs'?'on':''} onClick={() => setTab('txs')}><span>▤</span><small>{t(lang,'transactionsTab')}</small></button>
+      <button className={tab==='reports'?'on':''} onClick={() => setTab('reports')}><span>◔</span><small>{t(lang,'reportsTab')}</small></button>
+      <button className={tab==='settings'?'on':''} onClick={() => setTab('settings')}><span>⚙</span><small>{t(lang,'settingsTab')}</small></button>
+    </nav>
+
+    {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
+    {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'deleteAllWarning').split('.')[0]}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
+  </>;
 }
 
-function TxModal({ preset, edit, cats, onClose, onSave }: { preset: TxType; edit?: Transaction; cats: Category[]; onClose: () => void; onSave: (t: Transaction, isEdit: boolean) => void }) {
-  const [type, setType] = useState<TxType>(edit?.type ?? preset);
-  const [amount, setAmount] = useState(edit ? String(edit.amount) : '');
-  const [title, setTitle] = useState(edit?.title ?? '');
-  const [category, setCategory] = useState(edit?.category ?? '');
-  const [date, setDate] = useState(edit?.date ?? todayStr());
-  const [time, setTime] = useState(edit?.time ?? timeStr());
-  const [desc, setDesc] = useState(edit?.description ?? '');
-  const [errs, setErrs] = useState<string[]>([]);
-  const avail = cats.filter(c => c.kind === 'both' || c.kind === type);
+function TxModal({lang,preset,edit,cats,defaultCurrency,onClose,onSave}:{lang:LanguageCode;preset:TxType;edit?:Transaction;cats:Category[];defaultCurrency:CurrencyCode;onClose:()=>void;onSave:(t:Transaction,isEdit:boolean)=>Promise<void>}) {
+  const [type,setType]=useState<TxType>(edit?.type ?? preset);
+  const [currency,setCurrency]=useState<CurrencyCode>(edit?.currency ?? defaultCurrency);
+  const [amount,setAmount]=useState(edit ? String(edit.amount) : '');
+  const [title,setTitle]=useState(edit?.title ?? '');
+  const [category,setCategory]=useState(edit?.category ?? '');
+  const [date,setDate]=useState(edit?.date ?? todayStr());
+  const [time,setTime]=useState(edit?.time ?? timeStr());
+  const [desc,setDesc]=useState(edit?.description ?? '');
+  const [errs,setErrs]=useState<string[]>([]);
+  const avail=cats.filter(c => c.kind==='both' || c.kind===type);
+
+  const fieldMessage=(key:string) => key==='amount'?t(lang,'invalidAmount'):key==='title'?t(lang,title.trim()? 'titleTooLong':'titleRequired'):key==='category'?t(lang,'categoryRequired'):key==='date'?t(lang,'dateInvalid'):key==='time'?t(lang,'invalidTime'):key;
 
   function submit() {
-    const e = validateTx({ type, amount, title, category, date });
-    if (!e.length && !avail.some(c => c.label === category)) e.push('دسته‌بندی معتبر نیست.');
-    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) e.push('ساعت نامعتبر است.');
-    if (desc.trim().length > 500) e.push('توضیح بیش از حد طولانی است.');
-    const num = parseAmount(amount);
-    if (!e.length && num === null) e.push('مبلغ نامعتبر است.');
-    if (e.length) { setErrs(e); return; }
-
-    const now = new Date().toISOString();
-    const t: Transaction = {
-      id: edit?.id ?? uid(),
-      type,
-      amount: num as number,
-      title: title.trim(),
-      category,
-      date,
-      time,
-      description: desc.trim(),
-      createdAt: edit?.createdAt ?? now,
-      updatedAt: now,
+    const raw=validateTx({type,amount,title,category,date,time,currency});
+    const errors=raw.map(fieldMessage);
+    if (!errs.length && !avail.some(c => c.id===category)) {
+      errors.push(t(lang,'invalidCategory'));
+    }
+    if (desc.trim().length>500) errors.push(t(lang,'descTooLong'));
+    if (errors.length) { setErrs(errors); return; }
+    const num=parseAmount(amount,currency);
+    if (num===null) { setErrs([t(lang,'invalidAmount')]); return; }
+    const now=nowISO();
+    const tx:Transaction={
+      id:edit?.id ?? uid(),type,amount:num,currency,title:title.trim(),category,date,time,description:desc.trim(),
+      createdAt:edit?.createdAt ?? now,updatedAt:now
     };
-    onSave(t, !!edit);
+    void onSave(tx,!!edit);
   }
-  return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label={edit ? 'ویرایش تراکنش' : 'ثبت تراکنش'} onClick={onClose}>
-      <div className="sheet" onClick={e => e.stopPropagation()}>
-        <h3>{edit ? 'ویرایش تراکنش' : type === 'income' ? 'ثبت درآمد' : 'ثبت هزینه'}</h3>
-        {errs.length > 0 && <div className="err">{errs.map((x, i) => <div key={i}>• {x}</div>)}</div>}
-        <div className="row">
-          <button className={type === 'income' ? 'btn ok' : 'btn ghost'} onClick={() => { setType('income'); if (!cats.some(c => (c.kind === 'both' || c.kind === 'income') && c.label === category)) setCategory(''); }}>درآمد</button>
-          <button className={type === 'expense' ? 'btn danger' : 'btn ghost'} onClick={() => { setType('expense'); if (!cats.some(c => (c.kind === 'both' || c.kind === 'expense') && c.label === category)) setCategory(''); }}>هزینه</button>
-        </div>
-        <label>مبلغ (تومان)</label>
-        <input inputMode="numeric" autoFocus={!edit} placeholder="مثلاً 2500000" value={amount} onChange={e => setAmount(e.target.value)} aria-label="مبلغ به تومان" />
-        <label>عنوان</label>
-        <input placeholder="مثلاً حقوق مرداد" value={title} onChange={e => setTitle(e.target.value)} />
-        <label>دسته‌بندی</label>
-        <select value={category} onChange={e => setCategory(e.target.value)}>
-          <option value="">انتخاب کنید…</option>{avail.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
-        </select>
-        <div className="toolbar" style={{ gridTemplateColumns: '1fr 1fr' }}>
-          <div><label>تاریخ</label><input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
-          <div><label>ساعت</label><input type="time" value={time} onChange={e => setTime(e.target.value)} /></div>
-        </div>
-        <label>توضیح (اختیاری)</label>
-        <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)} />
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="btn" onClick={submit}>{edit ? 'ذخیره تغییرات' : 'ثبت'}</button>
-          <button className="btn ghost" onClick={onClose}>انصراف</button>
-        </div>
-      </div>
+
+  return <div className="modal" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className="sheet" onClick={e => e.stopPropagation()}>
+      <div className="sheet-head"><h3>{edit?t(lang,'edit'):type==='income'?t(lang,'registerIncome'):t(lang,'registerExpense')}</h3><button className="btn ghost" onClick={onClose}>×</button></div>
+      {errs.length>0 && <div className="err">{errs.map((x,i)=><div key={i}>• {x}</div>)}</div>}
+      <div className="row"><button className={type==='income'?'btn ok':'btn ghost'} onClick={() => {setType('income');if(!avail.some(c => c.id===category && (c.kind==='income'||c.kind==='both')))setCategory('')}}>{t(lang,'income')}</button><button className={type==='expense'?'btn danger':'btn ghost'} onClick={() => {setType('expense');if(!avail.some(c => c.id===category && (c.kind==='expense'||c.kind==='both')))setCategory('')}}>{t(lang,'expense')}</button></div>
+      <label>{t(lang,'currency')}</label>
+      <select value={currency} onChange={e => setCurrency(e.target.value as CurrencyCode)}>{CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}</select>
+      <label>{t(lang,'amount')} — {CURRENCY_MAP[currency].names[lang]}</label>
+      <input inputMode={CURRENCY_MAP[currency].digits===0?'numeric':'decimal'} autoFocus={!edit} placeholder={t(lang,'amountExample')} value={amount} onChange={e => setAmount(e.target.value)} />
+      <label>{t(lang,'title')}</label>
+      <input maxLength={120} placeholder={t(lang,'titleExample')} value={title} onChange={e => setTitle(e.target.value)} />
+      <label>{t(lang,'category')}</label>
+      <select value={category} onChange={e => setCategory(e.target.value)}><option value="">{t(lang,'select')}</option>{avail.map(c=><option key={c.id} value={c.id}>{categoryLabel(c.id,c.label,lang)}</option>)}</select>
+      <div className="toolbar" style={{gridTemplateColumns:'1fr 1fr'}}><div><label>{t(lang,'date')}</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} /></div><div><label>{t(lang,'time')}</label><input type="time" value={time} onChange={e=>setTime(e.target.value)} /></div></div>
+      <label>{t(lang,'descriptionOptional')}</label>
+      <textarea rows={3} maxLength={500} value={desc} onChange={e=>setDesc(e.target.value)} />
+      <div className="row" style={{marginTop:12}}><button className="btn" onClick={submit}>{edit?t(lang,'saveChanges'):t(lang,'save')}</button><button className="btn ghost" onClick={onClose}>{t(lang,'cancel')}</button></div>
     </div>
-  );
+  </div>;
 }
