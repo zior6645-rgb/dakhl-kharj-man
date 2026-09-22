@@ -77,10 +77,12 @@ assert(pkg.version==='1.6.0', 'package version is 1.6.0');
 assert(lock.version==='1.6.0' && lock.packages?.['']?.version==='1.6.0', 'lockfile version matches package');
 assert(mainActivity.includes('registerPlugin(FileSaverPlugin.class)'), 'Android FileSaver plugin is registered');
 assert(fileSaver.includes('@CapacitorPlugin(name = "FileSaver")'), 'native FileSaver plugin declaration exists');
-assert(fileSaver.includes('MediaStore.Downloads.EXTERNAL_CONTENT_URI'), 'native saver writes to public Downloads');
-assert(fileSaver.includes('Environment.DIRECTORY_DOWNLOADS + "/Cashio"'), 'native saver uses Downloads/Cashio');
-assert(fileSaver.includes('IS_PENDING'), 'native saver finalizes MediaStore file after writing');
-assert(androidBuild.includes('versionCode 9'), 'Android build code is incremented for the 1.6.0 fix');
+assert(fileSaver.includes('Intent.ACTION_CREATE_DOCUMENT'), 'native saver opens the Android save-file dialog');
+assert(fileSaver.includes('Intent.CATEGORY_OPENABLE'), 'native saver requests a user-selectable file destination');
+assert(fileSaver.includes('startActivityForResult(call, intent, SAVE_CALLBACK)'), 'native saver returns through a Capacitor activity callback');
+assert(fileSaver.includes('@ActivityCallback'), 'native saver handles the Android activity result');
+assert(fileSaver.includes('openOutputStream(uri)'), 'native saver writes to the location selected by the user');
+assert(androidBuild.includes('versionCode 10'), 'Android build code is incremented for the save-dialog fix');
 assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 
