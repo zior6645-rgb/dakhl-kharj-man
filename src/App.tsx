@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AppSettings, Category, CurrencyCode, FontScale, LanguageCode, StorageMode, ThemeMode, Transaction, TxType } from './types';
+import type { AppSettings, Category, CurrencyCode, FontScale, LanguageCode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
 import { calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
 import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
-import { cloudConfigured, ensureCloudSession, fetchCloudData, loadCloudSession, requestPasswordReset, resendSignupCode, signInWithPassword, signOut, signUp, upsertCloudCategory, upsertCloudTransaction, deleteCloudCategory, deleteCloudTransaction, deleteAllCloudData, uploadLocalCategories, uploadLocalTransactions, verifySignupCode, type CloudSession } from './cloud';
+
 
 const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
 const LS_FALLBACK = 'dk-txs-fallback';
-const LS_CLOUD_FALLBACK = 'dk-cloud-txs-cache';
-const LS_CLOUD_CATS = 'dk-cloud-cats-cache';
 const LS_WIPED = 'dk-txs-wiped';
 function loadSettings(): AppSettings {
   try {
@@ -24,13 +22,12 @@ function loadSettings(): AppSettings {
           language: value.language,
           currency: value.currency,
           theme: value.theme,
-          storageMode: value.storageMode === 'cloud' && cloudConfigured() ? 'cloud' : 'offline',
           fontScale: ['small','default','large','xlarge','xxlarge'].includes(value.fontScale) ? value.fontScale : 'default'
         };
       }
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', storageMode:'offline', fontScale:'default' };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default' };
 }
 
 function loadCategories(): Category[] {
@@ -128,8 +125,6 @@ export default function App() {
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
-  const [cloudSession, setCloudSession] = useState<CloudSession|null>(() => loadCloudSession());
-  const [cloudAuthOpen, setCloudAuthOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -165,9 +160,9 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(settings.storageMode==='cloud' ? LS_CLOUD_CATS : LS_CATS, JSON.stringify(cats));
+      localStorage.setItem(LS_CATS, JSON.stringify(cats));
     } catch {}
-  }, [cats,settings.storageMode]);
+  }, [cats,'offline']);
 
   useEffect(() => {
     const onKey = (e:KeyboardEvent) => {
@@ -207,41 +202,8 @@ export default function App() {
     setLoading(false);
   }
 
-  useEffect(() => { if (settings.storageMode==='offline') void loadOfflineData(); }, [settings.storageMode]);
+  useEffect(() => { if ('offline'==='offline') void loadOfflineData(); }, ['offline']);
 
-  useEffect(() => {
-    if (settings.storageMode !== 'cloud') return;
-    let active = true;
-    (async () => {
-      const session = await ensureCloudSession();
-      if (!active) return;
-      setCloudSession(session);
-      if (!session) {
-        setCloudAuthOpen(true);
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      try {
-        const data = await fetchCloudData(session);
-        if (!active) return;
-        const mergedCats = [...DEFAULT_CATS, ...data.categories.filter(c => !DEFAULT_CATS.some(d => d.id === c.id))];
-        const cloudTxs = data.transactions.map(x => normalizeTransaction(x,mergedCats,settings.currency)).filter(Boolean) as Transaction[];
-        cloudTxs.sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
-        setCats(mergedCats);
-        setTxs(cloudTxs);
-        try {
-          localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(cloudTxs));
-          localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats));
-        } catch {}
-      } catch (err) {
-        say(err instanceof Error ? err.message : t(lang,'cloudSyncFailed'));
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [settings.storageMode, cloudSession?.accessToken]);
 
   const filtered = useMemo(() => {
     let r = txs.filter(t =>
@@ -308,7 +270,7 @@ export default function App() {
   function persistLocal(next:Transaction[]) {
     try {
       localStorage.removeItem(LS_WIPED);
-      localStorage.setItem(settings.storageMode==='cloud' ? LS_CLOUD_FALLBACK : LS_FALLBACK,JSON.stringify(next));
+      localStorage.setItem(LS_FALLBACK,JSON.stringify(next));
     } catch {}
     setTxs(next);
   }
@@ -316,83 +278,16 @@ export default function App() {
   async function persistTransaction(tx:Transaction,isEdit:boolean):Promise<boolean> {
     const rest=isEdit ? txs.filter(x => x.id !== tx.id) : txs;
     const next=[tx,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-
-    if (settings.storageMode === 'cloud' && cloudSession) {
-      try {
-        await upsertCloudTransaction(cloudSession,tx);
-      } catch {
-        say(t(lang,'cloudSyncFailed'));
-        return false;
-      }
-      persistLocal(next);
-      return true;
-    }
-
     persistLocal(next);
     try { await dbPut(tx); } catch { say(t(lang,'localFallback')); }
     return true;
   }
 
   async function removeTx(id:string) {
-    if (settings.storageMode === 'cloud' && cloudSession) {
-      try { await deleteCloudTransaction(cloudSession,id); }
-      catch { say(t(lang,'cloudSyncFailed')); return; }
-    } else {
-      try { await dbDel(id); } catch {}
-    }
+    try { await dbDel(id); } catch {}
     persistLocal(txs.filter(x => x.id !== id));
     setConfirmId(null);
     say(t(lang,'deleted'));
-  }
-
-  async function chooseStorageMode(mode:StorageMode) {
-    if (mode === 'offline') {
-      setSettings(s => ({...s,storageMode:'offline'}));
-      setCloudAuthOpen(false);
-      return;
-    }
-    if (!cloudConfigured()) {
-      say(t(lang,'cloudNotConfigured'));
-      setCloudAuthOpen(true);
-      return;
-    }
-    const session = await ensureCloudSession();
-    if (!session) {
-      setCloudAuthOpen(true);
-      return;
-    }
-    setCloudSession(session);
-    setSettings(s => ({...s,storageMode:'cloud'}));
-  }
-
-  async function uploadLocalToCloud() {
-    if (!cloudSession) { setCloudAuthOpen(true); return; }
-    try {
-      const localRaw=localStorage.getItem(LS_FALLBACK);
-      const localList=localRaw ? JSON.parse(localRaw) : await dbGetAll();
-      const localCats=loadCategories();
-      const normalized=Array.isArray(localList)
-        ? localList.map(x=>normalizeTransaction(x,localCats,settings.currency)).filter(Boolean) as Transaction[]
-        : [];
-      await uploadLocalTransactions(cloudSession,normalized);
-      await uploadLocalCategories(cloudSession,localCats);
-      say(t(lang,'cloudImportedLocal'));
-      const data=await fetchCloudData(cloudSession);
-      const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c=>!DEFAULT_CATS.some(d=>d.id===c.id))];
-      setCats(mergedCats);
-      const next=data.transactions.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-      setTxs(next);
-      try { localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(next)); localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats)); } catch {}
-    } catch {
-      say(t(lang,'cloudSyncFailed'));
-    }
-  }
-
-  async function cloudLogout() {
-    await signOut();
-    setCloudSession(null);
-    setSettings(s => ({...s,storageMode:'offline'}));
-    say(t(lang,'cloudSignedOut'));
   }
 
   function exportJSON() {
@@ -432,35 +327,6 @@ export default function App() {
         .filter(Boolean) as Transaction[];
       sorted.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
 
-      if (settings.storageMode==='cloud' && cloudSession) {
-        try {
-          await uploadLocalCategories(cloudSession,nextCats);
-          await uploadLocalTransactions(cloudSession,sorted);
-
-          const current=await fetchCloudData(cloudSession);
-          const keepTx=new Set(sorted.map(x=>x.id));
-          const keepCats=new Set(nextCats.filter(c=>!c.system).map(c=>c.id));
-          await Promise.all(current.transactions.filter(x=>!keepTx.has(x.id)).map(x=>deleteCloudTransaction(cloudSession,x.id)));
-          await Promise.all(current.categories.filter(x=>!keepCats.has(x.id)).map(x=>deleteCloudCategory(cloudSession,x.id)));
-
-          const data=await fetchCloudData(cloudSession);
-          const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c => !DEFAULT_CATS.some(d => d.id===c.id))];
-          const cloudTxs=data.transactions
-            .map(x => normalizeTransaction(x,mergedCats,settings.currency))
-            .filter(Boolean) as Transaction[];
-          cloudTxs.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-          setCats(mergedCats);
-          setTxs(cloudTxs);
-          localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(cloudTxs));
-          localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats));
-          say(t(lang,'restored'));
-          return;
-        } catch {
-          say(t(lang,'cloudSyncFailed'));
-          return;
-        }
-      }
-
       localStorage.removeItem(LS_WIPED);
       localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
       setCats(nextCats);
@@ -477,12 +343,7 @@ export default function App() {
     if (!label) { say(t(lang,'categoryNameRequired')); return; }
     if (label.length>80) return;
     if (cats.some(c => c.label.toLocaleLowerCase(locale) === label.toLocaleLowerCase(locale))) { say(t(lang,'categoryExists')); return; }
-
     const created={id:'cat-'+uid(),label,kind:newCatKind};
-    if (settings.storageMode==='cloud' && cloudSession) {
-      try { await upsertCloudCategory(cloudSession,created); }
-      catch { say(t(lang,'cloudSyncFailed')); return; }
-    }
     setCats(prev => [...prev,created]);
     setNewCat('');
     say(t(lang,'categoryAdded'));
@@ -493,25 +354,15 @@ export default function App() {
     if (!c) return;
     if (c.system) { say(t(lang,'defaultCategoryCannotDelete')); return; }
     if (txs.some(x => x.category===id)) { say(t(lang,'categoryHasTransactions')); return; }
-    if (settings.storageMode==='cloud' && cloudSession) {
-      try { await deleteCloudCategory(cloudSession,id); }
-      catch { say(t(lang,'cloudSyncFailed')); return; }
-    }
     setCats(prev => prev.filter(x => x.id!==id));
     say(t(lang,'categoryDeleted'));
   }
 
   async function wipeAll() {
-    if (settings.storageMode==='cloud' && cloudSession) {
-      try { await deleteAllCloudData(cloudSession); }
-      catch { say(t(lang,'cloudSyncFailed')); return; }
-    }
     try {
       localStorage.setItem(LS_WIPED,'1');
       localStorage.removeItem(LS_FALLBACK);
-      localStorage.removeItem(LS_CLOUD_FALLBACK);
       localStorage.removeItem(LS_CATS);
-      localStorage.removeItem(LS_CLOUD_CATS);
     } catch {}
     setTxs([]);
     setCats(DEFAULT_CATS);
@@ -530,11 +381,6 @@ export default function App() {
       <div className="brand">
         <img className="brand-mark-img" src="./icon.svg" alt="" />
         <div><h1>{t(lang,'appName')}</h1><p>{t(lang,'tagline')}</p></div>
-      </div>
-      <div className="row">
-        <button className="btn ghost" onClick={() => setSettings(s => ({...s,theme:s.theme==='dark'?'light':s.theme==='light'?'system':'dark'}))}>
-          {settings.theme==='dark'?t(lang,'dark'):settings.theme==='light'?t(lang,'light'):t(lang,'system')}
-        </button>
       </div>
     </header>
 
@@ -655,25 +501,6 @@ export default function App() {
         </div>
 
         <div className="card" style={{marginTop:10}}>
-          <h3>{t(lang,'storageMode')}</h3>
-          <div className="row">
-            <button className={settings.storageMode==='offline'?'btn':'btn ghost'} onClick={() => void chooseStorageMode('offline')}>{t(lang,'offlineMode')}</button>
-            <button className={settings.storageMode==='cloud'?'btn':'btn ghost'} onClick={() => void chooseStorageMode('cloud')}>{t(lang,'cloudMode')}</button>
-          </div>
-          {settings.storageMode==='cloud' && cloudSession ? <>
-            <div className="cloud-account">
-              <b>{t(lang,'cloudAccount')}</b>
-              <span>{cloudSession.email}</span>
-            </div>
-            <div className="row" style={{marginTop:8}}>
-              <button className="btn ghost" onClick={() => void uploadLocalToCloud()}>{t(lang,'cloudTransferLocal')}</button>
-              <button className="btn ghost" onClick={() => void cloudLogout()}>{t(lang,'cloudLogout')}</button>
-            </div>
-          </> : settings.storageMode==='cloud' ? <div className="currency-note">{t(lang,'cloudModeRequiresAccount')}</div> : null}
-          {!cloudConfigured() && <div className="currency-note">{t(lang,'cloudConfigureHint')}</div>}
-        </div>
-
-        <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'language')}</h3>
           <select value={lang} onChange={e => { const next=e.target.value as LanguageCode; setSettings(s=>({...s,language:next})); say(t(next,'languageReload')); }}>
             {(Object.keys(LANGUAGE_NAMES) as LanguageCode[]).map(x => <option value={x} key={x}>{LANGUAGE_NAMES[x]}</option>)}
@@ -725,105 +552,10 @@ export default function App() {
       <button className={tab==='reports'?'on':''} onClick={() => setTab('reports')}><span>◔</span><small>{t(lang,'reportsTab')}</small></button>
       <button className={tab==='settings'?'on':''} onClick={() => setTab('settings')}><span>⚙</span><small>{t(lang,'settingsTab')}</small></button>
     </nav>
-
-    {cloudAuthOpen && <CloudAuthModal lang={lang} onClose={() => setCloudAuthOpen(false)} onAuthenticated={(session) => { setCloudSession(session); setCloudAuthOpen(false); setSettings(s => ({...s,storageMode:'cloud'})); }} />}
-    {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { const ok=await persistTransaction(tx,isEdit); if(ok){ setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); } }} />}
+ />}
+    {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
     {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
-}
-
-function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClose:()=>void;onAuthenticated:(session:CloudSession)=>void}) {
-  const [mode,setMode]=useState<'login'|'signup'>('login');
-  const [step,setStep]=useState<'form'|'verify'>('form');
-  const [email,setEmail]=useState('');
-  const [password,setPassword]=useState('');
-  const [confirmPassword,setConfirmPassword]=useState('');
-  const [otp,setOtp]=useState('');
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState('');
-  const [info,setInfo]=useState('');
-
-  async function submit() {
-    setError('');
-    setInfo('');
-    const normalized=email.trim().toLowerCase();
-    if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) { setError(t(lang,'invalidEmail')); return; }
-    if (password.length<8) { setError(t(lang,'passwordTooShort')); return; }
-    if (mode==='signup' && password!==confirmPassword) { setError(t(lang,'passwordsMismatch')); return; }
-    if (!cloudConfigured()) { setError(t(lang,'cloudNotConfigured')); return; }
-    setBusy(true);
-    try {
-      if (mode==='signup') {
-        await signUp(normalized,password);
-        setStep('verify');
-        setInfo(t(lang,'cloudOtpSent'));
-      } else {
-        const session=await signInWithPassword(normalized,password);
-        onAuthenticated(session);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verify() {
-    setError('');
-    setInfo('');
-    if (!/^\d{6}$/.test(otp.trim())) { setError(t(lang,'otpInvalid')); return; }
-    setBusy(true);
-    try {
-      const session=await verifySignupCode(email,otp);
-      if (session) onAuthenticated(session);
-      else {
-        const signed=await signInWithPassword(email,password);
-        onAuthenticated(signed);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resend() {
-    setError('');
-    setInfo('');
-    try { await resendSignupCode(email); setInfo(t(lang,'cloudOtpSent')); } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
-
-  async function resetPassword() {
-    setError('');
-    setInfo('');
-    const normalized=email.trim().toLowerCase();
-    if (!normalized) { setError(t(lang,'invalidEmail')); return; }
-    try { await requestPasswordReset(normalized); setInfo(t(lang,'cloudPasswordResetSent')); } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
-
-  return <div className="modal" role="dialog" aria-modal="true" onClick={onClose}>
-    <div className="sheet cloud-auth-sheet" onClick={e => e.stopPropagation()}>
-      <div className="sheet-head"><h3>{mode==='signup'?t(lang,'cloudSignUp'):t(lang,'cloudSignIn')}</h3><button className="btn ghost" onClick={onClose}>×</button></div>
-      {!cloudConfigured() ? <div className="err">{t(lang,'cloudConfigureHint')}</div> : step==='verify' ? <>
-        <p className="muted">{t(lang,'cloudEmailCodeHint')} <b>{email}</b></p>
-        {info && <div className="okmsg">{info}</div>}
-        {error && <div className="err">{error}</div>}
-        <label>{t(lang,'cloudOtp')}</label>
-        <input inputMode="numeric" autoFocus maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} placeholder="123456" />
-        <div className="row" style={{marginTop:10}}><button className="btn" disabled={busy} onClick={() => void verify()}>{t(lang,'cloudVerify')}</button><button className="btn ghost" disabled={busy} onClick={() => void resend()}>{t(lang,'cloudResendCode')}</button></div>
-      </> : <>
-        {info && <div className="okmsg">{info}</div>}
-        {error && <div className="err">{error}</div>}
-        <label>{t(lang,'cloudEmail')}</label>
-        <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} />
-        <label>{t(lang,'cloudPassword')}</label>
-        <input type="password" autoComplete={mode==='signup'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} />
-        {mode==='signup' && <><label>{t(lang,'cloudConfirmPassword')}</label><input type="password" autoComplete="new-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></>}
-        <div className="row" style={{marginTop:12}}><button className="btn" disabled={busy} onClick={() => void submit()}>{mode==='signup'?t(lang,'cloudSignUp'):t(lang,'cloudSignIn')}</button>{mode==='login' && <button className="btn ghost" disabled={busy} onClick={() => void resetPassword()}>{t(lang,'cloudForgotPassword')}</button>}</div>
-        <button className="btn ghost cloud-switch" disabled={busy} onClick={() => {setMode(mode==='login'?'signup':'login');setError('');setInfo('');}}>{mode==='login'?t(lang,'cloudCreateAccount'):t(lang,'cloudExistingAccount')}</button>
-      </>}
-    </div>
-  </div>;
 }
 
 function TxModal({lang,preset,edit,cats,defaultCurrency,onClose,onSave}:{lang:LanguageCode;preset:TxType;edit?:Transaction;cats:Category[];defaultCurrency:CurrencyCode;onClose:()=>void;onSave:(t:Transaction,isEdit:boolean)=>Promise<void>}) {
