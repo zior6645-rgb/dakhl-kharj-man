@@ -141,12 +141,17 @@ export default function App() {
         }
       } catch {
         try {
-          const fb = localStorage.getItem(LS_FALLBACK);
-          if (fb) {
-            const arr = JSON.parse(fb);
-            if (Array.isArray(arr)) setTxs(arr);
-          }
-        } catch { /* keep empty state */ }
+          const all = await dbGetAll();
+          setTxs(all.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
+        } catch {
+          try {
+            const fb = localStorage.getItem(LS_FALLBACK);
+            if (fb) {
+              const arr = JSON.parse(fb);
+              if (Array.isArray(arr)) setTxs(arr);
+            }
+          } catch { /* keep empty state */ }
+        }
       } finally {
         setLoading(false);
       }
@@ -215,8 +220,10 @@ export default function App() {
   const customRangeError = period === 'custom' && cFrom > cTo ? 'تاریخ شروع نباید بعد از تاریخ پایان باشد.' : '';
 
   function setLocalTransactions(next: Transaction[]) {
-    localStorage.removeItem(LS_WIPED);
-    try { localStorage.setItem(LS_FALLBACK, JSON.stringify(next)); } catch { /* state still remains in memory */ }
+    try {
+      localStorage.removeItem(LS_WIPED);
+      localStorage.setItem(LS_FALLBACK, JSON.stringify(next));
+    } catch { /* state still remains in memory */ }
     setTxs(next);
   }
 
@@ -301,9 +308,11 @@ export default function App() {
   }
 
   async function wipeAll() {
-    localStorage.setItem(LS_WIPED, '1');
-    localStorage.removeItem(LS_FALLBACK);
-    localStorage.removeItem(LS_CATS);
+    try {
+      localStorage.setItem(LS_WIPED, '1');
+      localStorage.removeItem(LS_FALLBACK);
+      localStorage.removeItem(LS_CATS);
+    } catch { /* in-memory state still gets cleared */ }
     setTxs([]);
     setCats(DEFAULT_CATS);
     setWipeStep(0);
