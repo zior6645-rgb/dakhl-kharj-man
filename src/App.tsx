@@ -555,7 +555,6 @@ export default function App() {
       <button className={tab==='reports'?'on':''} onClick={() => setTab('reports')}><span>◔</span><small>{t(lang,'reportsTab')}</small></button>
       <button className={tab==='settings'?'on':''} onClick={() => setTab('settings')}><span>⚙</span><small>{t(lang,'settingsTab')}</small></button>
     </nav>
- />}
     {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
     {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
