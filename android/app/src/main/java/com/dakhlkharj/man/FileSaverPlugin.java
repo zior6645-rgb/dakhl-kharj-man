@@ -1,23 +1,24 @@
 package com.dakhlkharj.man;
 
-import android.content.ContentResolver;
-import android.content.ContentValues;
+import android.app.Activity;
+import android.content.Intent;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
-import android.provider.MediaStore;
-import android.util.Base64;
+
+import androidx.activity.result.ActivityResult;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.PluginMethod;
 
 import java.io.OutputStream;
+import java.util.Base64;
 
 @CapacitorPlugin(name = "FileSaver")
 public class FileSaverPlugin extends Plugin {
+    private static final String SAVE_CALLBACK = "handleSaveFile";
 
     @PluginMethod
     public void saveFile(PluginCall call) {
@@ -34,52 +35,49 @@ public class FileSaverPlugin extends Plugin {
             return;
         }
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            call.reject("Public Downloads export requires Android 10 or newer.");
+        final Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(mimeType);
+        intent.putExtra(Intent.EXTRA_TITLE, fileName);
+
+        startActivityForResult(call, intent, SAVE_CALLBACK);
+    }
+
+    @ActivityCallback
+    private void handleSaveFile(PluginCall call, ActivityResult result) {
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+            call.reject("File save was canceled.");
             return;
         }
 
-        final String safeName = fileName.replaceAll("[\\/:*?\"<>|\r\n]", "_").trim();
-        final ContentResolver resolver = getContext().getContentResolver();
-        final ContentValues values = new ContentValues();
-        values.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName);
-        values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Cashio");
-        values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+        final Uri uri = result.getData().getData();
+        if (uri == null) {
+            call.reject("Android did not return a save location.");
+            return;
+        }
 
-        Uri uri = null;
+        final String data = call.getString("data");
+        if (data == null) {
+            call.reject("File data is missing.");
+            return;
+        }
+
         try {
-            uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-            if (uri == null) {
-                call.reject("Android could not create the download file.");
-                return;
-            }
-
-            byte[] bytes = Base64.decode(data, Base64.DEFAULT);
-            try (OutputStream output = resolver.openOutputStream(uri)) {
+            byte[] bytes = Base64.getDecoder().decode(data);
+            try (OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
                 if (output == null) {
-                    throw new IllegalStateException("Could not open the download stream.");
+                    throw new IllegalStateException("Could not open the selected save location.");
                 }
                 output.write(bytes);
                 output.flush();
             }
 
-            ContentValues ready = new ContentValues();
-            ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
-            resolver.update(uri, ready, null, null);
-
-            JSObject result = new JSObject();
-            result.put("uri", uri.toString());
-            result.put("path", "Downloads/Cashio/" + safeName);
-            call.resolve(result);
+            JSObject response = new JSObject();
+            response.put("uri", uri.toString());
+            response.put("saved", true);
+            call.resolve(response);
         } catch (Exception ex) {
-            if (uri != null) {
-                try {
-                    resolver.delete(uri, null, null);
-                } catch (Exception ignored) {
-                }
-            }
-            call.reject("Could not save the file to Downloads.", ex);
+            call.reject("Could not write the file to the selected location.", ex);
         }
     }
 }
