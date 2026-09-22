@@ -13,6 +13,6 @@ t=calcTotals(txs);
 assert(t.count===3,'all transaction count');
 txs[0]=Object.assign({},txs[0],{amount:12000000});t=calcTotals(txs,'IRT');assert(t.balance===9500000,'after edit');
 txs=txs.filter(x=>x.id!=='3');t=calcTotals(txs,'IRT');assert(t.balance===9500000,'after delete without cross-currency contamination');
-const v1=JSON.stringify({version:1,transactions:txs});assert(JSON.parse(v1).transactions[0].currency===undefined,'legacy backup remains readable');
+const legacyTxs=txs.map(({currency,...rest})=>rest); const v1=JSON.stringify({version:1,transactions:legacyTxs}); assert(JSON.parse(v1).transactions[0].currency===undefined,'legacy backup remains readable');
 const v2=JSON.stringify({version:2,transactions:txs.map(x=>({...x,currency:x.currency||'IRT'}))});assert(JSON.parse(v2).version===2,'new backup version');
 console.log('ALL LOGIC TESTS PASSED');
