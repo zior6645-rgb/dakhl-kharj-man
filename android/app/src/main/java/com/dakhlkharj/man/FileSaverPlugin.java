@@ -9,9 +9,9 @@ import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.annotation.PluginMethod;
 
 import java.io.OutputStream;
 import android.util.Base64;
@@ -63,7 +63,7 @@ public class FileSaverPlugin extends Plugin {
         }
 
         try {
-            byte[] bytes = Base64.getDecoder().decode(data);
+            byte[] bytes = Base64.decode(data, Base64.DEFAULT);
             try (OutputStream output = getContext().getContentResolver().openOutputStream(uri)) {
                 if (output == null) {
                     throw new IllegalStateException("Could not open the selected save location.");
