@@ -18,10 +18,10 @@ function loadSettings(): AppSettings {
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default', homeInsightOrder: Array.isArray(s.homeInsightOrder) ? s.homeInsightOrder.filter((x: any) => DEFAULT_HOME_INSIGHTS.includes(x)).filter((x: any, i: number, arr: any[]) => arr.indexOf(x) === i) : [...DEFAULT_HOME_INSIGHTS] };
+      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default' };
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default', homeInsightOrder:[...DEFAULT_HOME_INSIGHTS] };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default' };
 }
 
 function loadCategories(): Category[] {
@@ -376,7 +376,7 @@ export default function App() {
     const dy = e.clientY - state.startY;
     homeSwipeRef.current = {pointerId:-1,startX:0,startY:0,active:false};
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-    if (Math.abs(dx) < 45 || Math.abs(dx) <= Math.abs(dy)) return;
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return;
     swipeHomeInsight(dx < 0 ? 1 : -1);
   };
 
@@ -423,28 +423,21 @@ export default function App() {
           <button className="action-card expense-action" onClick={() => setModal({open:true,preset:'expense'})}><span className="action-icon">−</span><span><b>{t(lang,'registerExpense')}</b><small>{t(lang,'newOutput')}</small></span></button>
         </div>
         <section className="home-insights-section">
-          <h2>{t(lang,'homeInsights')}</h2>
-          <div className="muted home-insight-hint">{t(lang,'homeInsightHint')}</div>
-          <div className="home-insight-carousel">
-            <button type="button" className="home-insight-arrow" aria-label={t(lang,'previousInsight')} onClick={() => swipeHomeInsight(-1)}>‹</button>
-            <article
-              className="home-insight-detail home-insight-swipe"
-              onPointerDown={beginHomeSwipe}
-              onPointerUp={endHomeSwipe}
-              onPointerCancel={endHomeSwipe}
-              onPointerLeave={e => { if (e.currentTarget.hasPointerCapture?.(e.pointerId)) endHomeSwipe(e); }}
-              aria-live="polite"
-            >
-              {homeInsight==='balance' && <><span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-              {homeInsight==='monthIncome' && <><span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-              {homeInsight==='monthExpense' && <><span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-              {homeInsight==='latestTransaction' && <><span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></>}
-              <div className="home-insight-dots" aria-hidden="true">
-                {HOME_INSIGHTS.map(id => <span key={id} className={id===homeInsight?'active':''} />)}
-              </div>
-            </article>
-            <button type="button" className="home-insight-arrow" aria-label={t(lang,'nextInsight')} onClick={() => swipeHomeInsight(1)}>›</button>
-          </div>
+          <article
+            className="home-insight-detail home-insight-swipe"
+            onPointerDown={beginHomeSwipe}
+            onPointerUp={endHomeSwipe}
+            onPointerCancel={endHomeSwipe}
+            aria-label={t(lang,'homeInsights')}
+          >
+            <div className="home-insight-symbol" aria-hidden="true">
+              {homeInsight==='balance' ? '◉' : homeInsight==='monthIncome' ? '↗' : homeInsight==='monthExpense' ? '↘' : '◷'}
+            </div>
+            {homeInsight==='balance' && <><span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+            {homeInsight==='monthIncome' && <><span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+            {homeInsight==='monthExpense' && <><span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
+            {homeInsight==='latestTransaction' && <><span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></>}
+          </article>
         </section>
         <h2>{t(lang,'last7Days')}</h2>
         <div className="card"><div className="bars">
