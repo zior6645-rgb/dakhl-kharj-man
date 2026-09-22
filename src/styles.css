@@ -70,7 +70,7 @@ button{touch-action:manipulation}
   background:linear-gradient(120deg,transparent 35%,rgba(255,255,255,.28),transparent 62%);
   transform:rotate(12deg);
 }
-.brand-mark span{font-size:20px;font-weight:900;position:relative;z-index:1}
+.brand-mark span{font-size:20px;font-weight:900;position:relative;z-index:1}\n.brand-mark-img{width:42px;height:42px;border-radius:13px;flex:0 0 auto;display:block;object-fit:cover;box-shadow:0 8px 18px rgba(15,118,110,.23)}\n.hero-chip-img{width:50px;height:50px;border-radius:16px;display:block;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.16)}\n.row.space{justify-content:space-between;align-items:center}
 .brand h1{font-size:18px;line-height:1.1;margin:0;white-space:nowrap}
 .brand p{font-size:11px;color:var(--muted);margin:4px 0 0}
 .theme-button{white-space:nowrap}
@@ -133,7 +133,7 @@ button{touch-action:manipulation}
   background:var(--card);
   border-radius:17px;padding:12px;
   display:flex;align-items:center;gap:10px;
-  text-align:right;color:var(--text);
+  text-align:start;color:var(--text);
   cursor:pointer;box-shadow:var(--shadow-soft);
   transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease;
 }
@@ -147,7 +147,7 @@ button{touch-action:manipulation}
 .income-action .action-icon{background:rgba(21,154,114,.12);color:var(--ok)}
 .expense-action{border-color:var(--line)}
 .expense-action .action-icon{background:rgba(217,75,88,.10);color:var(--bad)}
-.action-card b{display:block;font-size:13px}
+.action-card b{display:block;font-size:13px}\n.align-end{display:flex;align-items:flex-end}.detail{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);line-height:1.7}\n.money-in{color:var(--ok);font-weight:900}.money-out{color:var(--bad);font-weight:900}\n.currency-note{margin-top:9px;color:var(--muted);font-size:11px;line-height:1.7}\n.currency-grid{grid-template-columns:1fr}@media(min-width:620px){.currency-grid{grid-template-columns:repeat(2,1fr)}}\n.income-bar{background:#16a34a}.expense-bar{background:#dc2626}\n.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.sheet-head h3{margin:0}.item-actions{justify-content:flex-end;align-items:center}
 .action-card small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .btn{
@@ -289,3 +289,5 @@ section{scroll-margin-top:90px}
 @media(prefers-reduced-motion:reduce){
   *{scroll-behavior:auto!important;transition:none!important}
 }
+
+[dir="ltr"] .hero-stats>div+div{border-right:0;border-left:1px solid rgba(255,255,255,.14);padding-right:0;padding-left:14px}\n[dir="ltr"] table th,[dir="ltr"] table td{text-align:left}\n[dir="ltr"] .toast{right:12px;left:12px}\n@media(max-width:430px){.brand-mark-img{width:38px;height:38px;border-radius:12px}.hero-chip-img{width:44px;height:44px;border-radius:14px}}\n
