@@ -364,12 +364,12 @@ export default function App() {
     setHomeInsight(HOME_INSIGHTS[next]);
   };
 
-  const beginHomeSwipe = (e:React.PointerEvent<HTMLDivElement>) => {
+  const beginHomeSwipe = (e:React.PointerEvent<HTMLElement>) => {
     homeSwipeRef.current = {pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,active:false};
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
 
-  const endHomeSwipe = (e:React.PointerEvent<HTMLDivElement>) => {
+  const endHomeSwipe = (e:React.PointerEvent<HTMLElement>) => {
     const state = homeSwipeRef.current;
     if (state.pointerId !== e.pointerId) return;
     const dx = e.clientX - state.startX;
