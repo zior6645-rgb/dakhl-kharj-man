@@ -119,7 +119,8 @@ export default function App() {
   const [reportCurrency, setReportCurrency] = useState<CurrencyCode>(() => loadSettings().currency);
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
-  const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');\n  const [showHomeCardManager, setShowHomeCardManager] = useState(false);
+  const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
+  const [showHomeCardManager, setShowHomeCardManager] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -129,6 +130,7 @@ export default function App() {
 
   useEffect(() => {
     applyTheme(settings.theme);
+    applyFontScale(settings.fontScale ?? 'default');
     try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch {}
   }, [settings]);
 
