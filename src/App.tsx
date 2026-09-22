@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+type FileSaverPlugin = {
+  saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; path:string }>;
+};
+
+const FileSaver = registerPlugin<FileSaverPlugin>('FileSaver');
 import type { AppSettings, Category, CurrencyCode, FontScale, LanguageCode, StorageMode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
@@ -396,34 +402,34 @@ export default function App() {
     say(t(lang,'cloudSignedOut'));
   }
 
-  async function deliverFile(filename:string, content:string|Blob, mime:string, successKey:'backupReady'|'csvReady') {
-    const blob = content instanceof Blob ? content : new Blob([content],{type:mime});
+  function utf8ToBase64(value:string) {
+    const bytes = new TextEncoder().encode(value);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i=0; i<bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+    }
+    return btoa(binary);
+  }
 
-    if (Capacitor.isNativePlatform()) {
-      const nav = navigator as Navigator & {
-        canShare?: (data?: ShareData) => boolean;
-        share?: (data?: ShareData) => Promise<void>;
-      };
-      const file = new File([blob],filename,{type:mime});
-      if (typeof nav.share === 'function' && (!nav.canShare || nav.canShare({files:[file]}))) {
-        try {
-          await nav.share({title:filename,files:[file]});
-          say(t(lang,successKey));
-          return;
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') {
-            say(t(lang,'fileShareCanceled'));
-          } else {
-            say(t(lang,'fileExportFailed'));
-          }
-          return;
-        }
+  async function deliverFile(filename:string, content:string, mime:string, successKey:'backupReady'|'csvReady') {
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        const result = await FileSaver.saveFile({
+          filename,
+          mimeType:mime,
+          data:utf8ToBase64(content)
+        });
+        if (!result?.path) throw new Error('Android did not return a saved file path.');
+        say(t(lang,successKey));
+      } catch {
+        say(t(lang,'fileExportFailed'));
       }
-      say(t(lang,'fileExportFailed'));
       return;
     }
 
     try {
+      const blob=new Blob([content],{type:mime});
       const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
       a.href=url;
