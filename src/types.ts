@@ -36,5 +36,4 @@ export interface AppSettings {
   currency: CurrencyCode;
   theme: ThemeMode;
   fontScale: FontScale;
-  homeInsightOrder: HomeInsightId[];
 }
