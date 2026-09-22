@@ -262,7 +262,7 @@ export default function App() {
       return a.amount-b.amount;
     });
     return r;
-  }, [txs,fType,fCat,fCurrency,fFrom,fTo,q,sort,lang,locale]);
+  }, [txs,cats,fType,fCat,fCurrency,fFrom,fTo,q,sort,lang,locale]);
 
   const currentTotals = useMemo(() => calcTotals(txs,settings.currency), [txs,settings.currency]);
   const days7 = useMemo(() => lastNDays(7), []);
