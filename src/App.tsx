@@ -25,7 +25,16 @@ const LS_THEME = 'dk-theme';
 const LS_FALLBACK = 'dk-txs-fallback';
 
 function loadCats(): Category[] {
-  try { const s = localStorage.getItem(LS_CATS); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch { /* */ }
+  try {
+    const s = localStorage.getItem(LS_CATS);
+    if (s) {
+      const a = JSON.parse(s);
+      if (Array.isArray(a) && a.length && a.every(c =>
+        c && typeof c.id === 'string' && typeof c.label === 'string' &&
+        (c.kind === 'income' || c.kind === 'expense' || c.kind === 'both')
+      )) return a as Category[];
+    }
+  } catch { /* fall back to defaults */ }
   return DEFAULT_CATS;
 }
 function loadTheme(): ThemeMode {
@@ -168,11 +177,13 @@ export default function App() {
   const customRangeError = period === 'custom' && cFrom > cTo ? 'تاریخ شروع نباید بعد از تاریخ پایان باشد.' : '';
 
   async function persistAdd(t: Transaction, isEdit: boolean) {
-    try { await dbPut(t); } catch { /* fallback only */ }
+    let dbSaved = true;
+    try { await dbPut(t); } catch { dbSaved = false; }
     setTxs(prev => {
       const rest = isEdit ? prev.filter(x => x.id !== t.id) : prev;
       return [t, ...rest].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     });
+    if (!dbSaved) say('تراکنش در پشتیبان محلی ذخیره شد؛ پایگاه داده دستگاه در دسترس نبود.');
   }
   async function removeTx(id: string) {
     try { await dbDel(id); } catch { /* */ }
@@ -203,8 +214,15 @@ export default function App() {
       const obj = JSON.parse(txt);
       const err = validateBackup(obj);
       if (err) { say('فایل خراب است: ' + err); return; }
-      const list = (obj as { transactions: Transaction[] }).transactions;
+      const rawList = (obj as { transactions: Transaction[] }).transactions;
       const incomingCats = (obj as { categories?: Category[] }).categories;
+      const now = new Date().toISOString();
+      const list = rawList.map(t => ({
+        ...t,
+        createdAt: t.createdAt || now,
+        updatedAt: t.updatedAt || now,
+        description: t.description || '',
+      }));
       await dbBulkPut(list);
       setTxs([...list].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)));
       if (incomingCats && Array.isArray(incomingCats) && incomingCats.length) setCats(incomingCats);
