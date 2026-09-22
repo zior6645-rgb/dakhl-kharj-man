@@ -37,7 +37,7 @@ export function parseAmount(value: string, currency: CurrencyCode = 'IRT'): numb
   if (hasComma && hasDot) {
     const decimalSep = comma > dot ? ',' : '.';
     const thousandSep = decimalSep === ',' ? '.' : ',';
-    s = s.replace(thousandSep, '');
+    s = s.split(thousandSep).join('');
     const pos = s.lastIndexOf(decimalSep);
     s = s.slice(0,pos) + '.' + s.slice(pos + 1);
   } else if (hasComma) {
