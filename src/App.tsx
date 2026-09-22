@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AppSettings, Category, CurrencyCode, LanguageCode, ThemeMode, Transaction, TxType } from './types';
+import type { AppSettings, Category, CurrencyCode, FontScale, HomeCardId, LanguageCode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
@@ -11,16 +11,18 @@ const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
 const LS_FALLBACK = 'dk-txs-fallback';
 const LS_WIPED = 'dk-txs-wiped';
+const DEFAULT_HOME_CARDS: HomeCardId[] = ['balance','monthIncome','monthExpense','monthBalance','topCategory','transactionCount','latestTransaction','currencySummary'];
+const ALL_HOME_CARDS: HomeCardId[] = ['balance','monthIncome','monthExpense','monthBalance','topCategory','transactionCount','latestTransaction','currencySummary'];
 
 function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return s;
+      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default', homeCards: Array.isArray(s.homeCards) ? s.homeCards.filter((x: any) => ALL_HOME_CARDS.includes(x)).filter((x: any, i: number, arr: any[]) => arr.indexOf(x) === i) : DEFAULT_HOME_CARDS };
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system' };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default', homeCards:[...DEFAULT_HOME_CARDS] };
 }
 
 function loadCategories(): Category[] {
@@ -64,6 +66,10 @@ function normalizeTransaction(raw: any, customCategories: Category[], defaultCur
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : nowISO(),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : nowISO()
   };
+}
+
+function applyFontScale(scale: FontScale) {
+  document.documentElement.setAttribute('data-font-scale', scale);
 }
 
 function applyTheme(mode: ThemeMode) {
@@ -113,7 +119,7 @@ export default function App() {
   const [reportCurrency, setReportCurrency] = useState<CurrencyCode>(() => loadSettings().currency);
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
-  const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
+  const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');\n  const [showHomeCardManager, setShowHomeCardManager] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -216,7 +222,7 @@ export default function App() {
   const days7 = useMemo(() => lastNDays(7), []);
   const trend7 = useMemo(() => groupByDay(txs,days7,settings.currency), [txs,days7,settings.currency]);
   const max7 = Math.max(1,...trend7.flatMap(x => [x.income,x.expense]));
-  const balances = useMemo(() => currenciesIn(txs).map(c => ({code:c, ...calcTotals(txs,c)})), [txs]);
+  const balances = useMemo(() => currenciesIn(txs).map(c => ({code:c, ...calcTotals(txs,c)})), [txs]);\n  const latest = txs[0];\n  const topExpenseLabel = topCategory(txs,settings.currency);
 
   const pr = periodRange(period,cFrom,cTo);
   const reportTxs = useMemo(() => filterByDateRange(txs,pr.from,pr.to,reportCurrency), [txs,pr.from,pr.to,reportCurrency]);
@@ -390,11 +396,42 @@ export default function App() {
           <button className="action-card expense-action" onClick={() => setModal({open:true,preset:'expense'})}><span className="action-icon">−</span><span><b>{t(lang,'registerExpense')}</b><small>{t(lang,'newOutput')}</small></span></button>
         </div>
 
-        <div className="grid cards">
-          <div className="card stat-card"><div className="k">{t(lang,'currentMonthIncome')}</div><div className="v in">{fmtMoney(monthTotals.income,settings.currency,locale)}</div></div>
-          <div className="card stat-card"><div className="k">{t(lang,'currentMonthExpense')}</div><div className="v out">{fmtMoney(monthTotals.expense,settings.currency,locale)}</div></div>
-          <div className="card stat-card"><div className="k">{t(lang,'currentMonthBalance')}</div><div className="v bal">{fmtMoney(monthTotals.balance,settings.currency,locale)}</div></div>
-        </div>
+        <section className="home-carousel-section">
+          <div className="section-head">
+            <div>
+              <h2>{t(lang,'homeCards')}</h2>
+              <div className="muted">{t(lang,'cardHint')}</div>
+            </div>
+            <button className="btn ghost compact-btn" onClick={() => setShowHomeCardManager(true)}>＋ {t(lang,'addHomeCard')}</button>
+          </div>
+          <div className="home-card-track" aria-label={t(lang,'homeCards')}>
+            {settings.homeCards.map((id, index) => {
+              const moveCard = (dir: -1 | 1) => {
+                setSettings(s => {
+                  const next=[...s.homeCards];
+                  const target=index+dir;
+                  if(target<0 || target>=next.length) return s;
+                  [next[index],next[target]]=[next[target],next[index]];
+                  return {...s,homeCards:next};
+                });
+              };
+              const removeCard = () => setSettings(s => ({...s,homeCards:s.homeCards.filter(x => x!==id)}));
+              const nav = <div className="home-card-controls">
+                <button className="icon-btn" aria-label={t(lang,'moveLeft')} onClick={() => moveCard(-1)}>‹</button>
+                <button className="icon-btn" aria-label={t(lang,'moveRight')} onClick={() => moveCard(1)}>›</button>
+              </div>;
+              if (id==='balance') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
+              if (id==='monthIncome') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
+              if (id==='monthExpense') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
+              if (id==='monthBalance') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthBalanceCard')}</span><strong className="card-amount">{fmtMoney(monthTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
+              if (id==='topCategory') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'topCategoryCard')}</span><strong className="card-text">{topExpenseLabel==='—'?'—':categoryLabel(topExpenseLabel,'',lang)}</strong><span className="card-sub">{topExpenseLabel==='—'?t(lang,'noTransactions'):fmtMoney((groupByCategory(txs.filter(x=>x.currency===settings.currency),'expense',settings.currency)[0]?.total ?? 0),settings.currency,locale)}</span></article>;
+              if (id==='transactionCount') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'transactionCountCard')}</span><strong className="card-amount">{fmtNum(currentTotals.count,locale)}</strong><span className="card-sub">{t(lang,'transactions')}</span></article>;
+              if (id==='latestTransaction') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></article>;
+              return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'currencySummaryCard')}</span><strong className="card-amount">{fmtNum(balances.length,locale)}</strong><span className="card-sub">{t(lang,'otherCurrencies')}</span></article>;
+            })}
+            <button className="home-add-card" onClick={() => setShowHomeCardManager(true)}><span>＋</span><b>{t(lang,'addHomeCard')}</b></button>
+          </div>
+        </section>
 
         <h2>{t(lang,'last7Days')}</h2>
         <div className="card">
@@ -501,6 +538,32 @@ export default function App() {
       {tab==='settings' && <>
         <h2>{t(lang,'settings')}</h2>
         <div className="card">
+          <h3>{t(lang,'fontSize')}</h3>
+          <div className="row font-size-options">
+            {(['small','default','large','xlarge','xxlarge'] as FontScale[]).map(s => <button key={s} className={fontScale===s?'btn':'btn ghost'} onClick={() => setSettings(v => ({...v,fontScale:s}))}>{t(lang, s==='small'?'fontSmall':s==='default'?'fontDefault':s==='large'?'fontLarge':s==='xlarge'?'fontXlarge':'fontXxlarge')}</button>)}
+          </div>
+          <div className="muted font-preview">{t(lang,'dataIntegrityNote')}</div>
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
+          <div className="section-head">
+            <div><h3>{t(lang,'homeCards')}</h3><div className="muted">{t(lang,'cardHint')}</div></div>
+            <button className="btn ghost compact-btn" onClick={() => setShowHomeCardManager(true)}>＋ {t(lang,'addHomeCard')}</button>
+          </div>
+          <div className="home-card-manager">
+            {settings.homeCards.map((id,index) => <div className="manager-row" key={id}>
+              <b>{t(lang, id==='balance'?'balanceCard':id==='monthIncome'?'monthIncomeCard':id==='monthExpense'?'monthExpenseCard':id==='monthBalance'?'monthBalanceCard':id==='topCategory'?'topCategoryCard':id==='transactionCount'?'transactionCountCard':id==='latestTransaction'?'latestTransactionCard':'currencySummaryCard')}</b>
+              <div className="row">
+                <button className="icon-btn" aria-label={t(lang,'moveLeft')} disabled={index===0} onClick={() => setSettings(s => { const n=[...s.homeCards]; [n[index-1],n[index]]=[n[index],n[index-1]]; return {...s,homeCards:n}; })}>‹</button>
+                <button className="icon-btn" aria-label={t(lang,'moveRight')} disabled={index===settings.homeCards.length-1} onClick={() => setSettings(s => { const n=[...s.homeCards]; [n[index],n[index+1]]=[n[index+1],n[index]]; return {...s,homeCards:n}; })}>›</button>
+                <button className="btn ghost compact-btn" onClick={() => setSettings(s => ({...s,homeCards:s.homeCards.filter(x => x!==id)}))}>{t(lang,'removeHomeCard')}</button>
+              </div>
+            </div>)}
+            <button className="btn ghost" onClick={() => setSettings(s => ({...s,homeCards:[...DEFAULT_HOME_CARDS]}))}>{t(lang,'restoreHomeCards')}</button>
+          </div>
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'language')}</h3>
           <select value={lang} onChange={e => { const next=e.target.value as LanguageCode; setSettings(s=>({...s,language:next})); say(t(next,'languageReload')); }}>
             {(Object.keys(LANGUAGE_NAMES) as LanguageCode[]).map(x => <option value={x} key={x}>{LANGUAGE_NAMES[x]}</option>)}
@@ -553,6 +616,12 @@ export default function App() {
       <button className={tab==='settings'?'on':''} onClick={() => setTab('settings')}><span>⚙</span><small>{t(lang,'settingsTab')}</small></button>
     </nav>
 
+    {showHomeCardManager && <div className="modal" onClick={() => setShowHomeCardManager(false)}><div className="sheet" onClick={e => e.stopPropagation()}><div className="sheet-head"><h3>{t(lang,'addHomeCard')}</h3><button className="btn ghost" onClick={() => setShowHomeCardManager(false)}>×</button></div><div className="list home-card-options">
+      {ALL_HOME_CARDS.filter(id => !settings.homeCards.includes(id)).map(id => <button className="option-row" key={id} onClick={() => { setSettings(s => ({...s,homeCards:[...s.homeCards,id]})); setShowHomeCardManager(false); }}>
+        <span>{t(lang, id==='balance'?'balanceCard':id==='monthIncome'?'monthIncomeCard':id==='monthExpense'?'monthExpenseCard':id==='monthBalance'?'monthBalanceCard':id==='topCategory'?'topCategoryCard':id==='transactionCount'?'transactionCountCard':id==='latestTransaction'?'latestTransactionCard':'currencySummaryCard')}</span><b>＋</b>
+      </button>)}
+      <button className="btn ghost" onClick={() => setShowHomeCardManager(false)}>{t(lang,'cancel')}</button>
+    </div></div></div>}
     {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
     {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
