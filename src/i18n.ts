@@ -20,7 +20,7 @@ export type TranslationKey =
   | 'categoryNameRequired'|'allDataDeleted'|'themeChanged'|'currencySummary'|'otherCurrencies'
   | 'noBalanceForCurrency'|'currencyNote'|'noAutoConversion'|'mainNavigation'|'home'|'transactionsTab'
   | 'reportsTab'|'settingsTab'|'currencyFilter'|'allCurrencies'|'thisCurrency'|'privacyLocalOnly'
-  | 'dataIntegrityNote'|'openSource'|'languageReload'|'selectedCurrency';
+  | 'dataIntegrityNote'|'openSource'|'languageReload'|'selectedCurrency'|'customCategory'|'confirmDeleteTransaction';
 
 type Dict = Record<TranslationKey,string>;
 
