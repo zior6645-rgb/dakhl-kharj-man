@@ -241,11 +241,14 @@ export default function App() {
         }
         return groupByMonth(reportTxs,months,reportCurrency);
       }
-      return groupByDay(reportTxs,lastNDays(Math.max(1,Math.min(days,14)),end),reportCurrency);
+      return groupByDay(reportTxs,lastNDays(days,end),reportCurrency);
     }
     if (period === 'today') return groupByDay(reportTxs,[todayStr()],reportCurrency);
     if (period === 'week') return groupByDay(reportTxs,lastNDays(7),reportCurrency);
-    return groupByDay(reportTxs,lastNDays(30),reportCurrency);
+    const monthStart = new Date(pr.from + 'T12:00:00');
+    const monthEnd = new Date(pr.to + 'T12:00:00');
+    const monthDays = Math.max(1,Math.round((monthEnd.getTime()-monthStart.getTime())/86400000)+1);
+    return groupByDay(reportTxs,lastNDays(monthDays,monthEnd),reportCurrency);
   }, [reportTxs,period,cFrom,cTo,reportCurrency]);
   const maxRep = Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]));
   const customRangeError = period === 'custom' && cFrom > cTo;
@@ -436,8 +439,8 @@ export default function App() {
           <input aria-label={t(lang,'search')} placeholder={t(lang,'search')} value={q} onChange={e => setQ(e.target.value)} />
           <select value={fType} onChange={e => setFType(e.target.value as 'all'|TxType)}><option value="all">{t(lang,'allTypes')}</option><option value="income">{t(lang,'income')}</option><option value="expense">{t(lang,'expense')}</option></select>
           <select value={fCat} onChange={e => setFCat(e.target.value)}><option value="all">{t(lang,'allCategories')}</option>{cats.map(c => <option value={c.id} key={c.id}>{categoryLabel(c.id,c.label,lang)}</option>)}</select>
-          <select value={fCurrency} onChange={e => setFCurrency(e.target.value as 'all'|CurrencyCode)}><option value="all">{t(lang,'allCurrencies')}</option>{CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}</select>
-          <select value={sort} onChange={e => setSort(e.target.value as any)}><option value="new">{t(lang,'newest')}</option><option value="old">{t(lang,'oldest')}</option><option value="max">{t(lang,'highestAmount')}</option><option value="min">{t(lang,'lowestAmount')}</option></select>
+          <select value={fCurrency} onChange={e => { const next=e.target.value as 'all'|CurrencyCode; setFCurrency(next); if(next==='all' && (sort==='max'||sort==='min')) setSort('new'); }}><option value="all">{t(lang,'allCurrencies')}</option>{CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}</select>
+          <select value={sort} onChange={e => setSort(e.target.value as any)}><option value="new">{t(lang,'newest')}</option><option value="old">{t(lang,'oldest')}</option><option value="max" disabled={fCurrency==='all'}>{t(lang,'highestAmount')}</option><option value="min" disabled={fCurrency==='all'}>{t(lang,'lowestAmount')}</option></select>
         </div>
         <div className="toolbar date-tools">
           <div><label>{t(lang,'fromDate')}</label><input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)} /></div>
@@ -479,7 +482,7 @@ export default function App() {
               <div className="card"><div className="k">{t(lang,'balance')}</div><div className="v bal">{fmtMoney(reportTotals.balance,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'transactionCount')}</div><div className="v">{fmtNum(reportTotals.count,locale)}</div></div>
             </div>
-            <h3>{t(lang,'last7Days')}</h3>
+            <h3>{t(lang,'incomeExpenseTrend')}</h3>
             <div className="card"><div className="bars">
               {repTrend.map(d => <div className="bar" key={d.date}>
                 <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*48)}} />
