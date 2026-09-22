@@ -55,6 +55,15 @@ for(const token of ['HomeInsightId','homeInsightOrder','home-insights','home-car
 }
 
 assert(app.includes('const categoryName ='), 'custom category label resolver exists');
+assert(app.includes("import { Capacitor } from '@capacitor/core';"), 'native platform detection is available for file export');
+assert(app.includes('Capacitor.isNativePlatform()'), 'native export path is used for Android/iOS');
+assert(app.includes('navigator') && app.includes('share'), 'native file export uses the Web Share API');
+assert(app.includes('await nav.share'), 'native export waits for the share operation before showing success');
+assert(app.includes("t(lang,'fileExportFailed')"), 'file export failure is reported instead of claiming success');
+assert(app.includes("t(lang,'fileShareCanceled')"), 'file share cancellation is reported');
+assert(app.includes("await deliverFile('dakhl-kharj-backup-v2.json'"), 'JSON backup uses the file delivery helper');
+assert(app.includes("await deliverFile('dakhl-kharj.csv'"), 'CSV export uses the file delivery helper');
+
 assert(app.includes('categoryName(t.category)'), 'custom category search uses display labels');
 assert(fs.existsSync(path.join(ROOT,'public','manifest.webmanifest')), 'web manifest exists');
 assert(fs.existsSync(path.join(ROOT,'public','sw.js')), 'offline service worker exists');
