@@ -52,7 +52,7 @@ button{touch-action:manipulation}
   background:var(--nav);
   backdrop-filter:blur(18px);
   -webkit-backdrop-filter:blur(18px);
-  border-bottom:1px solid color-mix(in srgb,var(--line) 82%,transparent);
+  border-bottom:1px solid var(--line);
   padding:12px max(16px,calc((100vw - 1024px)/2 + 14px));
   display:flex;align-items:center;justify-content:space-between;gap:14px;
 }
@@ -143,10 +143,10 @@ button{touch-action:manipulation}
   width:40px;height:40px;border-radius:13px;display:grid;place-items:center;
   font-size:23px;font-weight:800;flex:0 0 auto;
 }
-.income-action{border-color:color-mix(in srgb,var(--ok) 28%,var(--line))}
-.income-action .action-icon{background:color-mix(in srgb,var(--ok) 13%,transparent);color:var(--ok)}
-.expense-action{border-color:color-mix(in srgb,var(--bad) 23%,var(--line))}
-.expense-action .action-icon{background:color-mix(in srgb,var(--bad) 11%,transparent);color:var(--bad)}
+.income-action{border-color:var(--line)}
+.income-action .action-icon{background:rgba(21,154,114,.12);color:var(--ok)}
+.expense-action{border-color:var(--line)}
+.expense-action .action-icon{background:rgba(217,75,88,.10);color:var(--bad)}
 .action-card b{display:block;font-size:13px}
 .action-card small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
@@ -177,7 +177,7 @@ input,select,textarea{
   outline:none;
   transition:border-color .15s ease,box-shadow .15s ease;
 }
-input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--muted) 72%,transparent)}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:.72}
 input:focus,select:focus,textarea:focus{
   border-color:var(--pri);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 15%,transparent);
@@ -272,7 +272,7 @@ th,td{border-bottom:1px solid var(--line);padding:9px;text-align:right}
 }
 .nav button span{font-size:19px;line-height:1}
 .nav button small{font-size:10px}
-.nav button.on{color:var(--pri);font-weight:800;background:color-mix(in srgb,var(--pri) 9%,transparent)}
+.nav button.on{color:var(--pri);font-weight:800;background:rgba(15,118,110,.09)}
 section{scroll-margin-top:90px}
 @media(max-width:430px){
   .top{padding-inline:11px}
