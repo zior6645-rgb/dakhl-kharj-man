@@ -317,19 +317,13 @@ html[data-font-scale="xxlarge"]{--font-scale:1.40}
 .section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:8px 0 10px}
 .section-head h2,.section-head h3{margin:0}
 .compact-btn{padding:8px 10px}
-.home-insights-section{margin-top:10px}
-.home-insight-hint{margin-bottom:9px}
-.home-insight-carousel{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;gap:8px;align-items:stretch}
-.home-insight-arrow{border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--text);font-size:32px;line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:var(--shadow-soft)}
-.home-insight-arrow:active{transform:translateY(1px)}
-.home-insight-swipe{min-width:0;min-height:166px;margin-top:0;padding:20px;position:relative;touch-action:pan-y;cursor:grab;user-select:none}
+.home-insights-section{margin-top:12px}
+.home-insight-detail{min-height:166px;margin-top:0;position:relative;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px;display:flex;flex-direction:column;justify-content:center;gap:7px;box-shadow:var(--shadow-soft)}
+.home-insight-swipe{touch-action:pan-y;cursor:grab;user-select:none;overflow:hidden}
 .home-insight-swipe:active{cursor:grabbing}
-.home-insight-swipe .card-k{padding-inline-end:0}
+.home-insight-symbol{position:absolute;inset-block-start:16px;inset-inline-end:16px;width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--pri-soft);color:var(--pri);font-size:24px;font-weight:900}
+.home-insight-swipe .card-k{padding-inline-end:58px}
 .home-insight-swipe .card-amount{font-size:31px}
 .home-insight-swipe .card-text{font-size:20px}
 .home-insight-swipe .card-sub{font-size:11px;color:var(--muted)}
-.home-insight-dots{position:absolute;bottom:10px;inset-inline:0;display:flex;justify-content:center;gap:6px}
-.home-insight-dots span{width:6px;height:6px;border-radius:50%;background:var(--line)}
-.home-insight-dots span.active{width:18px;border-radius:999px;background:var(--pri)}
-.home-insight-detail{background:var(--card);border:1px solid var(--line);border-radius:22px;display:flex;flex-direction:column;justify-content:center;gap:7px;box-shadow:var(--shadow-soft)}
 .font-size-options .btn{min-width:82px}
