@@ -313,6 +313,7 @@ html[data-font-scale="xlarge"]{--font-scale:1.25}
 html[data-font-scale="xxlarge"]{--font-scale:1.40}
 .brand h1,.brand p,.hero-label,.hero-balance,.hero-note,.hero-stats span,.hero-stats b,.card .k,.card .v,
 .action-card b,.action-card small,.btn,input,select,textarea,label,.item,.badge,.muted,h2,h3,.nav button,.nav button small,
+.font-preview{font-size:calc(1em * var(--font-scale))}
 .section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:8px 0 10px}
 .section-head h2,.section-head h3{margin:0}
 .compact-btn{padding:8px 10px}
