@@ -28,6 +28,8 @@ export interface Category {
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type FontScale = 'small' | 'default' | 'large' | 'xlarge' | 'xxlarge';
+export type HomeCardId = 'balance' | 'monthIncome' | 'monthExpense' | 'monthBalance' | 'topCategory' | 'transactionCount' | 'latestTransaction' | 'currencySummary';
 
 export interface AppSettings {
   language: LanguageCode;
