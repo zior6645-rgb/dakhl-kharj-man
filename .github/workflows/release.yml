@@ -1,5 +1,6 @@
 name: Release APK and AAB
 # Release build for Cashio
+# Final verification build
 
 concurrency:
   group: release-build
