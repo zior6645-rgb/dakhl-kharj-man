@@ -180,7 +180,7 @@ input,select,textarea{
 input::placeholder,textarea::placeholder{color:var(--muted);opacity:.72}
 input:focus,select:focus,textarea:focus{
   border-color:var(--pri);
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 15%,transparent);
+  box-shadow:0 0 0 3px rgba(20,184,166,.15);
 }
 label{font-size:12px;color:var(--muted);display:block;margin:9px 0 4px}
 .list{display:grid;gap:8px}
