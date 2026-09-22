@@ -35,4 +35,6 @@ export interface AppSettings {
   language: LanguageCode;
   currency: CurrencyCode;
   theme: ThemeMode;
+  fontScale: FontScale;
+  homeCards: HomeCardId[];
 }
