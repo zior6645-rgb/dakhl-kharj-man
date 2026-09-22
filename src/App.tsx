@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import type { AppSettings, Category, CurrencyCode, FontScale, HomeCardId, LanguageCode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
@@ -121,6 +121,10 @@ export default function App() {
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
   const [showHomeCardManager, setShowHomeCardManager] = useState(false);
+  const [draggingHomeCard, setDraggingHomeCard] = useState<HomeCardId|null>(null);
+  const homeTrackRef = useRef<HTMLDivElement>(null);
+  const homeCardRefs = useRef<Partial<Record<HomeCardId, HTMLElement>>>({});
+  const homeDragRef = useRef<{id:HomeCardId;pointerId:number;startX:number;active:boolean;overId:HomeCardId|null}>({id:'balance',pointerId:-1,startX:0,active:false,overId:null});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -356,6 +360,75 @@ export default function App() {
     say(t(lang,'allDataDeleted'));
   }
 
+  const stopHomeCardDrag = (e?: PointerEvent<HTMLButtonElement>) => {
+    const state = homeDragRef.current;
+    if (e && state.pointerId !== e.pointerId) return;
+    if (e) {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    }
+    homeDragRef.current = { id:'balance', pointerId:-1, startX:0, active:false, overId:null };
+    setDraggingHomeCard(null);
+  };
+
+  const reorderHomeCard = (id:HomeCardId, targetId:HomeCardId) => {
+    setSettings(prev => {
+      if (id === targetId) return prev;
+      const current = prev.homeCards;
+      if (!current.includes(id) || !current.includes(targetId)) return prev;
+      const next = current.filter(x => x !== id);
+      const targetIndex = next.indexOf(targetId);
+      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, id);
+      return {...prev, homeCards:next};
+    });
+  };
+
+  const moveHomeCardFromPointer = (e: PointerEvent<HTMLButtonElement>) => {
+    const state = homeDragRef.current;
+    if (state.pointerId !== e.pointerId) return;
+    if (!state.active) {
+      if (Math.abs(e.clientX - state.startX) < 8) return;
+      state.active = true;
+      setDraggingHomeCard(state.id);
+    }
+
+    const track = homeTrackRef.current;
+    if (track) {
+      const r = track.getBoundingClientRect();
+      if (e.clientX < r.left + 42) track.scrollBy({left:-12,behavior:'auto'});
+      else if (e.clientX > r.right - 42) track.scrollBy({left:12,behavior:'auto'});
+    }
+
+    setSettings(prev => {
+      const ordered = prev.homeCards;
+      const candidates = ordered
+        .filter(x => x !== state.id)
+        .map(x => ({id:x, rect:homeCardRefs.current[x]?.getBoundingClientRect()}))
+        .filter(x => x.rect);
+      let target: HomeCardId|null = null;
+      for (const item of candidates) {
+        const rect = item.rect!;
+        if (e.clientX < rect.left + rect.width / 2) {
+          target = item.id;
+          break;
+        }
+      }
+      if (!target) target = candidates.at(-1)?.id ?? null;
+      if (!target || target === state.id || target === state.overId) return prev;
+      state.overId = target;
+      const next = ordered.filter(x => x !== state.id);
+      const targetIndex = next.indexOf(target);
+      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, state.id);
+      return {...prev,homeCards:next};
+    });
+  };
+
+  const startHomeCardDrag = (id:HomeCardId, e:PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    homeDragRef.current = {id,pointerId:e.pointerId,startX:e.clientX,active:false,overId:null};
+  };
+
   const systemCats=cats.filter(c => c.system);
   const customCats=cats.filter(c => !c.system);
 
@@ -409,7 +482,7 @@ export default function App() {
             </div>
             <button className="btn ghost compact-btn" onClick={() => setShowHomeCardManager(true)}>＋ {t(lang,'addHomeCard')}</button>
           </div>
-          <div className="home-card-track" aria-label={t(lang,'homeCards')}>
+          <div ref={homeTrackRef} className="home-card-track" aria-label={t(lang,'homeCards')}>
             {settings.homeCards.map((id, index) => {
               const moveCard = (dir: -1 | 1) => {
                 setSettings(s => {
@@ -421,11 +494,25 @@ export default function App() {
                 });
               };
               const removeCard = () => setSettings(s => ({...s,homeCards:s.homeCards.filter(x => x!==id)}));
-              const nav = <div className="home-card-controls">
-                <button className="icon-btn" aria-label={t(lang,'moveLeft')} onClick={() => moveCard(-1)}>‹</button>
-                <button className="icon-btn" aria-label={t(lang,'moveRight')} onClick={() => moveCard(1)}>›</button>
-              </div>;
-              if (id==='balance') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
+              const nav = <>
+                <button
+                  type="button"
+                  className="home-card-drag-handle"
+                  aria-label={t(lang,'cardHint')}
+                  title={t(lang,'cardHint')}
+                  onPointerDown={(e) => startHomeCardDrag(id,e)}
+                  onPointerMove={moveHomeCardFromPointer}
+                  onPointerUp={stopHomeCardDrag}
+                  onPointerCancel={stopHomeCardDrag}
+                >⋮⋮</button>
+                <div className="home-card-controls">
+                  <button className="icon-btn" aria-label={t(lang,'moveLeft')} onClick={() => moveCard(-1)}>‹</button>
+                  <button className="icon-btn" aria-label={t(lang,'moveRight')} onClick={() => moveCard(1)}>›</button>
+                </div>
+              </>;
+              const cardStyle = {opacity: draggingHomeCard===id ? 0.68 : 1, transform: draggingHomeCard===id ? 'scale(.98)' : undefined};
+              const cardRef = (el: HTMLElement|null) => { if (el) homeCardRefs.current[id]=el; else delete homeCardRefs.current[id]; };
+              if (id==='balance') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeCard===id?' is-dragging':'')} key={id}>{nav}<span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
               if (id==='monthIncome') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
               if (id==='monthExpense') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
               if (id==='monthBalance') return <article className="home-insight-card" key={id}>{nav}<span className="card-k">{t(lang,'monthBalanceCard')}</span><strong className="card-amount">{fmtMoney(monthTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></article>;
