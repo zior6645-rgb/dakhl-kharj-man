@@ -3,7 +3,7 @@ import { currencyName } from './currencies';
 
 export type TranslationKey =
   | 'appName'|'tagline'|'currentBalance'|'recordedOnDevice'|'totalIncome'|'totalExpense'|'transactions'
-  | 'currentMonthIncome'|'currentMonthExpense'|'currentMonthBalance'|'last7Days'|'income'|'expense'
+  | 'currentMonthIncome'|'currentMonthExpense'|'currentMonthBalance'|'last7Days'|'incomeExpenseTrend'|'income'|'expense'
   | 'greenIncomeRedExpense'|'financialSummary'|'totalTransactions'|'topExpenseCategory'|'latestTransactions'
   | 'noneYet'|'registerFirst'|'noTransactions'|'transactionsTitle'|'search'|'allTypes'|'allCategories'
   | 'newest'|'oldest'|'highestAmount'|'lowestAmount'|'fromDate'|'toDate'|'clearFilters'|'details'|'edit'
@@ -27,7 +27,7 @@ type Dict = Record<TranslationKey,string>;
 const fa: Dict = {
  appName:'دخل‌وخرج من',tagline:'مدیریت ساده و آفلاین',currentBalance:'موجودی فعلی',recordedOnDevice:'اطلاعات روی همین دستگاه ذخیره می‌شود',
  totalIncome:'درآمد کل',totalExpense:'هزینه کل',transactions:'تراکنش',currentMonthIncome:'درآمد ماه جاری',currentMonthExpense:'هزینه ماه جاری',currentMonthBalance:'مانده ماه جاری',
- last7Days:'هفت روز اخیر',income:'درآمد',expense:'هزینه',greenIncomeRedExpense:'سبز: درآمد — قرمز: هزینه',financialSummary:'خلاصه مالی',totalTransactions:'تعداد کل تراکنش‌ها',
+ last7Days:'هفت روز اخیر',incomeExpenseTrend:'روند درآمد و هزینه',income:'درآمد',expense:'هزینه',greenIncomeRedExpense:'سبز: درآمد — قرمز: هزینه',financialSummary:'خلاصه مالی',totalTransactions:'تعداد کل تراکنش‌ها',
  topExpenseCategory:'بیشترین دسته هزینه',latestTransactions:'آخرین تراکنش‌ها',noneYet:'هنوز تراکنشی ثبت نشده است.',registerFirst:'از دکمه‌های بالا اولین تراکنش را ثبت کنید.',
  noTransactions:'تراکنشی وجود ندارد.',transactionsTitle:'تراکنش‌ها',search:'جستجو…',allTypes:'همه انواع',allCategories:'همه دسته‌ها',newest:'جدیدترین',oldest:'قدیمی‌ترین',
  highestAmount:'بیشترین مبلغ',lowestAmount:'کمترین مبلغ',fromDate:'از تاریخ',toDate:'تا تاریخ',clearFilters:'پاک کردن فیلتر',details:'جزئیات',edit:'ویرایش',delete:'حذف',
@@ -51,7 +51,7 @@ const fa: Dict = {
 const en: Dict = {
  appName:'My Income & Expense',tagline:'Simple offline money management',currentBalance:'Current balance',recordedOnDevice:'Data is stored on this device',
  totalIncome:'Total income',totalExpense:'Total expense',transactions:'Transactions',currentMonthIncome:'Current month income',currentMonthExpense:'Current month expense',currentMonthBalance:'Current month balance',
- last7Days:'Last 7 days',income:'Income',expense:'Expense',greenIncomeRedExpense:'Green: income — Red: expense',financialSummary:'Financial summary',totalTransactions:'Total transactions',
+ last7Days:'Last 7 days',incomeExpenseTrend:'Income and expense trend',income:'Income',expense:'Expense',greenIncomeRedExpense:'Green: income — Red: expense',financialSummary:'Financial summary',totalTransactions:'Total transactions',
  topExpenseCategory:'Top expense category',latestTransactions:'Latest transactions',noneYet:'No transactions yet.',registerFirst:'Use the buttons above to add your first transaction.',
  noTransactions:'No transactions.',transactionsTitle:'Transactions',search:'Search…',allTypes:'All types',allCategories:'All categories',newest:'Newest',oldest:'Oldest',
  highestAmount:'Highest amount',lowestAmount:'Lowest amount',fromDate:'From date',toDate:'To date',clearFilters:'Clear filters',details:'Details',edit:'Edit',delete:'Delete',noMatch:'No match found.',changeFilters:'Change the filters or add a new transaction.',
@@ -74,7 +74,7 @@ const en: Dict = {
 const ru: Dict = {
  ...en, appName:'Мои доходы и расходы', tagline:'Простой офлайн-учёт денег', currentBalance:'Текущий баланс', recordedOnDevice:'Данные хранятся на этом устройстве',
  totalIncome:'Общий доход',totalExpense:'Общие расходы',transactions:'Операции',currentMonthIncome:'Доход за текущий месяц',currentMonthExpense:'Расходы за текущий месяц',currentMonthBalance:'Баланс текущего месяца',
- last7Days:'Последние 7 дней',income:'Доход',expense:'Расход',greenIncomeRedExpense:'Зелёный: доход — красный: расход',financialSummary:'Финансовая сводка',totalTransactions:'Всего операций',topExpenseCategory:'Главная категория расходов',latestTransactions:'Последние операции',
+ last7Days:'Последние 7 дней',incomeExpenseTrend:'Динамика доходов и расходов',income:'Доход',expense:'Расход',greenIncomeRedExpense:'Зелёный: доход — красный: расход',financialSummary:'Финансовая сводка',totalTransactions:'Всего операций',topExpenseCategory:'Главная категория расходов',latestTransactions:'Последние операции',
  noneYet:'Операций пока нет.',registerFirst:'Используйте кнопки выше, чтобы добавить первую операцию.',noTransactions:'Операций нет.',transactionsTitle:'Операции',search:'Поиск…',allTypes:'Все типы',allCategories:'Все категории',newest:'Сначала новые',oldest:'Сначала старые',
  highestAmount:'Максимальная сумма',lowestAmount:'Минимальная сумма',fromDate:'Дата от',toDate:'Дата до',clearFilters:'Сбросить фильтры',details:'Подробнее',edit:'Изменить',delete:'Удалить',noMatch:'Ничего не найдено.',changeFilters:'Измените фильтры или добавьте новую операцию.',
  reports:'Отчёты',today:'Сегодня',thisWeek:'Эта неделя',thisMonth:'Этот месяц',last3Months:'Последние 3 месяца',thisYear:'Этот год',customRange:'Произвольный период',rangeStartAfterEnd:'Начальная дата не должна быть позже конечной.',noDataInRange:'В этом периоде нет данных.',
@@ -88,7 +88,7 @@ const ru: Dict = {
 
 const ar: Dict = {
  ...en, appName:'دخلي ومصروفي',tagline:'إدارة مالية بسيطة دون اتصال',currentBalance:'الرصيد الحالي',recordedOnDevice:'تُحفظ البيانات على هذا الجهاز',totalIncome:'إجمالي الدخل',totalExpense:'إجمالي المصروفات',transactions:'المعاملات',
- currentMonthIncome:'دخل الشهر الحالي',currentMonthExpense:'مصروفات الشهر الحالي',currentMonthBalance:'رصيد الشهر الحالي',last7Days:'آخر 7 أيام',income:'دخل',expense:'مصروف',greenIncomeRedExpense:'الأخضر: دخل — الأحمر: مصروف',financialSummary:'الملخص المالي',totalTransactions:'إجمالي المعاملات',topExpenseCategory:'أعلى فئة مصروفات',latestTransactions:'أحدث المعاملات',
+ currentMonthIncome:'دخل الشهر الحالي',currentMonthExpense:'مصروفات الشهر الحالي',currentMonthBalance:'رصيد الشهر الحالي',last7Days:'آخر 7 أيام',incomeExpenseTrend:'اتجاه الدخل والمصروفات',income:'دخل',expense:'مصروف',greenIncomeRedExpense:'الأخضر: دخل — الأحمر: مصروف',financialSummary:'الملخص المالي',totalTransactions:'إجمالي المعاملات',topExpenseCategory:'أعلى فئة مصروفات',latestTransactions:'أحدث المعاملات',
  noneYet:'لا توجد معاملات بعد.',registerFirst:'استخدم الأزرار أعلاه لإضافة أول معاملة.',noTransactions:'لا توجد معاملات.',transactionsTitle:'المعاملات',search:'بحث…',allTypes:'كل الأنواع',allCategories:'كل الفئات',newest:'الأحدث',oldest:'الأقدم',highestAmount:'أعلى مبلغ',lowestAmount:'أقل مبلغ',fromDate:'من تاريخ',toDate:'إلى تاريخ',clearFilters:'مسح الفلاتر',details:'التفاصيل',edit:'تعديل',delete:'حذف',
  noMatch:'لم يتم العثور على نتائج.',changeFilters:'غيّر الفلاتر أو أضف معاملة جديدة.',reports:'التقارير',today:'اليوم',thisWeek:'هذا الأسبوع',thisMonth:'هذا الشهر',last3Months:'آخر 3 أشهر',thisYear:'هذه السنة',customRange:'نطاق مخصص',rangeStartAfterEnd:'يجب ألا يسبق تاريخ البداية تاريخ النهاية.',noDataInRange:'لا توجد بيانات في هذا النطاق.',
  totalIncomeReport:'إجمالي الدخل',totalExpenseReport:'إجمالي المصروفات',balance:'الرصيد',transactionCount:'عدد المعاملات',expenseDistribution:'توزيع المصروفات حسب الفئة',settings:'الإعدادات',appearance:'المظهر',light:'فاتح',dark:'داكن',system:'النظام',language:'اللغة',currency:'العملة',defaultCurrency:'العملة الافتراضية',
@@ -101,7 +101,7 @@ const ar: Dict = {
 
 const tr: Dict = {
  ...en, appName:'Gelir Giderim',tagline:'Basit çevrimdışı para yönetimi',currentBalance:'Güncel bakiye',recordedOnDevice:'Veriler bu cihazda saklanır',totalIncome:'Toplam gelir',totalExpense:'Toplam gider',transactions:'İşlemler',
- currentMonthIncome:'Bu ay geliri',currentMonthExpense:'Bu ay gideri',currentMonthBalance:'Bu ay bakiyesi',last7Days:'Son 7 gün',income:'Gelir',expense:'Gider',greenIncomeRedExpense:'Yeşil: gelir — Kırmızı: gider',financialSummary:'Finans özeti',totalTransactions:'Toplam işlem',topExpenseCategory:'En yüksek gider kategorisi',latestTransactions:'Son işlemler',
+ currentMonthIncome:'Bu ay geliri',currentMonthExpense:'Bu ay gideri',currentMonthBalance:'Bu ay bakiyesi',last7Days:'Son 7 gün',incomeExpenseTrend:'Gelir ve gider eğilimi',income:'Gelir',expense:'Gider',greenIncomeRedExpense:'Yeşil: gelir — Kırmızı: gider',financialSummary:'Finans özeti',totalTransactions:'Toplam işlem',topExpenseCategory:'En yüksek gider kategorisi',latestTransactions:'Son işlemler',
  noneYet:'Henüz işlem yok.',registerFirst:'İlk işlemi eklemek için yukarıdaki düğmeleri kullanın.',noTransactions:'İşlem yok.',transactionsTitle:'İşlemler',search:'Ara…',allTypes:'Tüm türler',allCategories:'Tüm kategoriler',newest:'En yeni',oldest:'En eski',highestAmount:'En yüksek tutar',lowestAmount:'En düşük tutar',fromDate:'Başlangıç',toDate:'Bitiş',clearFilters:'Filtreleri temizle',details:'Detaylar',edit:'Düzenle',delete:'Sil',
  noMatch:'Sonuç bulunamadı.',changeFilters:'Filtreleri değiştirin veya yeni işlem ekleyin.',reports:'Raporlar',today:'Bugün',thisWeek:'Bu hafta',thisMonth:'Bu ay',last3Months:'Son 3 ay',thisYear:'Bu yıl',customRange:'Özel aralık',rangeStartAfterEnd:'Başlangıç tarihi bitiş tarihinden sonra olamaz.',noDataInRange:'Bu aralıkta veri yok.',
  totalIncomeReport:'Toplam gelir',totalExpenseReport:'Toplam gider',balance:'Bakiye',transactionCount:'İşlem sayısı',expenseDistribution:'Kategoriye göre gider dağılımı',settings:'Ayarlar',appearance:'Görünüm',light:'Açık',dark:'Koyu',system:'Sistem',language:'Dil',currency:'Para birimi',defaultCurrency:'Varsayılan para birimi',
