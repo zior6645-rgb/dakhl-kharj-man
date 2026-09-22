@@ -262,7 +262,7 @@ export default function App() {
     const rest=isEdit ? txs.filter(x => x.id !== t.id) : txs;
     const next=[t,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
     persistLocal(next);
-    try { await dbPut(t); } catch { say(t('') as never); }
+    try { await dbPut(t); } catch { say(t(lang,'localFallback')); }
   }
 
   async function removeTx(id:string) {
@@ -295,7 +295,7 @@ export default function App() {
     try {
       const obj=JSON.parse(await file.text());
       const err=validateBackup(obj);
-      if (err) { say(t(lang,'invalidFile')+' '+err); return; }
+      if (err) { say(t(lang,'invalidFileKeepData')); return; }
       const rawCats=Array.isArray(obj.categories) ? obj.categories : [];
       const custom=rawCats.filter((c:any) => c && typeof c.id==='string' && !DEFAULT_CATS.some(d => d.id===c.id) && typeof c.label==='string' && c.label.trim());
       const nextCats=[...DEFAULT_CATS,...custom] as Category[];
@@ -551,7 +551,7 @@ export default function App() {
     </nav>
 
     {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
-    {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'deleteAllWarning').split('.')[0]}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
+    {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
 }
 
@@ -591,7 +591,7 @@ function TxModal({lang,preset,edit,cats,defaultCurrency,onClose,onSave}:{lang:La
     <div className="sheet" onClick={e => e.stopPropagation()}>
       <div className="sheet-head"><h3>{edit?t(lang,'edit'):type==='income'?t(lang,'registerIncome'):t(lang,'registerExpense')}</h3><button className="btn ghost" onClick={onClose}>×</button></div>
       {errs.length>0 && <div className="err">{errs.map((x,i)=><div key={i}>• {x}</div>)}</div>}
-      <div className="row"><button className={type==='income'?'btn ok':'btn ghost'} onClick={() => {setType('income');if(!avail.some(c => c.id===category && (c.kind==='income'||c.kind==='both')))setCategory('')}}>{t(lang,'income')}</button><button className={type==='expense'?'btn danger':'btn ghost'} onClick={() => {setType('expense');if(!avail.some(c => c.id===category && (c.kind==='expense'||c.kind==='both')))setCategory('')}}>{t(lang,'expense')}</button></div>
+      <div className="row"><button className={type==='income'?'btn ok':'btn ghost'} onClick={() => {setType('income');setCategory(cats.some(c => c.id===category && (c.kind==='income'||c.kind==='both'))?category:'')}}>{t(lang,'income')}</button><button className={type==='expense'?'btn danger':'btn ghost'} onClick={() => {setType('expense');setCategory(cats.some(c => c.id===category && (c.kind==='expense'||c.kind==='both'))?category:'')}}>{t(lang,'expense')}</button></div>
       <label>{t(lang,'currency')}</label>
       <select value={currency} onChange={e => setCurrency(e.target.value as CurrencyCode)}>{CURRENCIES.map(c => <option value={c.code} key={c.code}>{c.names[lang]} ({c.code})</option>)}</select>
       <label>{t(lang,'amount')} — {CURRENCY_MAP[currency].names[lang]}</label>
