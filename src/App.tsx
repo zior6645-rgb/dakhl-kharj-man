@@ -313,29 +313,34 @@ export default function App() {
     setTxs(next);
   }
 
-  async function persistTransaction(tx:Transaction,isEdit:boolean) {
+  async function persistTransaction(tx:Transaction,isEdit:boolean):Promise<boolean> {
     const rest=isEdit ? txs.filter(x => x.id !== tx.id) : txs;
     const next=[tx,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-    persistLocal(next);
+
     if (settings.storageMode === 'cloud' && cloudSession) {
       try {
         await upsertCloudTransaction(cloudSession,tx);
       } catch {
         say(t(lang,'cloudSyncFailed'));
+        return false;
       }
-    } else {
-      try { await dbPut(tx); } catch { say(t(lang,'localFallback')); }
+      persistLocal(next);
+      return true;
     }
+
+    persistLocal(next);
+    try { await dbPut(tx); } catch { say(t(lang,'localFallback')); }
+    return true;
   }
 
   async function removeTx(id:string) {
-    const next=txs.filter(x => x.id !== id);
-    persistLocal(next);
     if (settings.storageMode === 'cloud' && cloudSession) {
-      try { await deleteCloudTransaction(cloudSession,id); } catch { say(t(lang,'cloudSyncFailed')); }
+      try { await deleteCloudTransaction(cloudSession,id); }
+      catch { say(t(lang,'cloudSyncFailed')); return; }
     } else {
       try { await dbDel(id); } catch {}
     }
+    persistLocal(txs.filter(x => x.id !== id));
     setConfirmId(null);
     say(t(lang,'deleted'));
   }
@@ -364,7 +369,7 @@ export default function App() {
     if (!cloudSession) { setCloudAuthOpen(true); return; }
     try {
       const localRaw=localStorage.getItem(LS_FALLBACK);
-      const localList=localRaw ? JSON.parse(localRaw) : [];
+      const localList=localRaw ? JSON.parse(localRaw) : await dbGetAll();
       const localCats=loadCategories();
       const normalized=Array.isArray(localList)
         ? localList.map(x=>normalizeTransaction(x,localCats,settings.currency)).filter(Boolean) as Transaction[]
@@ -413,18 +418,58 @@ export default function App() {
       const obj=JSON.parse(await file.text());
       const err=validateBackup(obj);
       if (err) { say(t(lang,'invalidFileKeepData')); return; }
+
       const rawCats=Array.isArray(obj.categories) ? obj.categories : [];
-      const custom=rawCats.filter((c:any) => c && typeof c.id==='string' && !DEFAULT_CATS.some(d => d.id===c.id) && typeof c.label==='string' && c.label.trim());
+      const custom=rawCats.filter((c:any) =>
+        c && typeof c.id==='string' &&
+        !DEFAULT_CATS.some(d => d.id===c.id) &&
+        typeof c.label==='string' &&
+        c.label.trim()
+      );
       const nextCats=[...DEFAULT_CATS,...custom] as Category[];
-      const list=(obj.transactions as any[]).map(x => normalizeTransaction(x,nextCats,settings.currency)).filter(Boolean) as Transaction[];
-      const sorted=list.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+      const sorted=(obj.transactions as any[])
+        .map(x => normalizeTransaction(x,nextCats,settings.currency))
+        .filter(Boolean) as Transaction[];
+      sorted.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+
+      if (settings.storageMode==='cloud' && cloudSession) {
+        try {
+          await uploadLocalCategories(cloudSession,nextCats);
+          await uploadLocalTransactions(cloudSession,sorted);
+
+          const current=await fetchCloudData(cloudSession);
+          const keepTx=new Set(sorted.map(x=>x.id));
+          const keepCats=new Set(nextCats.filter(c=>!c.system).map(c=>c.id));
+          await Promise.all(current.transactions.filter(x=>!keepTx.has(x.id)).map(x=>deleteCloudTransaction(cloudSession,x.id)));
+          await Promise.all(current.categories.filter(x=>!keepCats.has(x.id)).map(x=>deleteCloudCategory(cloudSession,x.id)));
+
+          const data=await fetchCloudData(cloudSession);
+          const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c => !DEFAULT_CATS.some(d => d.id===c.id))];
+          const cloudTxs=data.transactions
+            .map(x => normalizeTransaction(x,mergedCats,settings.currency))
+            .filter(Boolean) as Transaction[];
+          cloudTxs.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+          setCats(mergedCats);
+          setTxs(cloudTxs);
+          localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(cloudTxs));
+          localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats));
+          say(t(lang,'restored'));
+          return;
+        } catch {
+          say(t(lang,'cloudSyncFailed'));
+          return;
+        }
+      }
+
       localStorage.removeItem(LS_WIPED);
       localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
       setCats(nextCats);
       setTxs(sorted);
       try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
       say(t(lang,'restored'));
-    } catch { say(t(lang,'invalidFileKeepData')); }
+    } catch {
+      say(t(lang,'invalidFileKeepData'));
+    }
   }
 
   async function addCategory() {
@@ -432,10 +477,14 @@ export default function App() {
     if (!label) { say(t(lang,'categoryNameRequired')); return; }
     if (label.length>80) return;
     if (cats.some(c => c.label.toLocaleLowerCase(locale) === label.toLocaleLowerCase(locale))) { say(t(lang,'categoryExists')); return; }
+
     const created={id:'cat-'+uid(),label,kind:newCatKind};
+    if (settings.storageMode==='cloud' && cloudSession) {
+      try { await upsertCloudCategory(cloudSession,created); }
+      catch { say(t(lang,'cloudSyncFailed')); return; }
+    }
     setCats(prev => [...prev,created]);
     setNewCat('');
-    if (settings.storageMode==='cloud' && cloudSession) { try { await upsertCloudCategory(cloudSession,created); } catch { say(t(lang,'cloudSyncFailed')); return; } }
     say(t(lang,'categoryAdded'));
   }
 
@@ -444,12 +493,19 @@ export default function App() {
     if (!c) return;
     if (c.system) { say(t(lang,'defaultCategoryCannotDelete')); return; }
     if (txs.some(x => x.category===id)) { say(t(lang,'categoryHasTransactions')); return; }
+    if (settings.storageMode==='cloud' && cloudSession) {
+      try { await deleteCloudCategory(cloudSession,id); }
+      catch { say(t(lang,'cloudSyncFailed')); return; }
+    }
     setCats(prev => prev.filter(x => x.id!==id));
-    if (settings.storageMode==='cloud' && cloudSession) { try { await deleteCloudCategory(cloudSession,id); } catch { say(t(lang,'cloudSyncFailed')); return; } }
     say(t(lang,'categoryDeleted'));
   }
 
   async function wipeAll() {
+    if (settings.storageMode==='cloud' && cloudSession) {
+      try { await deleteAllCloudData(cloudSession); }
+      catch { say(t(lang,'cloudSyncFailed')); return; }
+    }
     try {
       localStorage.setItem(LS_WIPED,'1');
       localStorage.removeItem(LS_FALLBACK);
@@ -461,9 +517,6 @@ export default function App() {
     setCats(DEFAULT_CATS);
     setWipeStep(0);
     try { await dbClear(); } catch {}
-    if (settings.storageMode==='cloud' && cloudSession) {
-      try { await deleteAllCloudData(cloudSession); } catch { say(t(lang,'cloudSyncFailed')); return; }
-    }
     say(t(lang,'allDataDeleted'));
   }
 
