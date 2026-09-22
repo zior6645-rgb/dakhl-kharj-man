@@ -38,4 +38,5 @@ export interface AppSettings {
   theme: ThemeMode;
   storageMode: StorageMode;
   fontScale: FontScale;
+  homeInsightOrder: HomeInsightId[];
 }

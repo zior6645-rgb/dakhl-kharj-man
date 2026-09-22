@@ -17,14 +17,28 @@ const LS_WIPED = 'dk-txs-wiped';
 const DEFAULT_HOME_INSIGHTS: HomeInsightId[] = ['balance','monthIncome','monthExpense','latestTransaction'];
 
 function loadSettings(): AppSettings {
+  const defaultOrder: HomeInsightId[] = [...DEFAULT_HOME_INSIGHTS];
   try {
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, storageMode: s.storageMode === 'cloud' ? 'cloud' : 'offline', fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default' };
+      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) {
+        const savedOrder = Array.isArray(s.homeInsightOrder)
+          ? s.homeInsightOrder
+              .filter((x: unknown): x is HomeInsightId => defaultOrder.includes(x as HomeInsightId))
+              .filter((x: HomeInsightId, i: number, arr: HomeInsightId[]) => arr.indexOf(x) === i)
+          : [];
+        const homeInsightOrder = savedOrder.length === defaultOrder.length ? savedOrder : defaultOrder;
+        return {
+          ...s,
+          storageMode: s.storageMode === 'cloud' ? 'cloud' : 'offline',
+          fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default',
+          homeInsightOrder
+        };
+      }
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', storageMode:'offline', fontScale:'default' };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', storageMode:'offline', fontScale:'default', homeInsightOrder:defaultOrder };
 }
 
 function loadCategories(): Category[] {
@@ -122,10 +136,12 @@ export default function App() {
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
-  const [homeInsight, setHomeInsight] = useState<HomeInsightId>('balance');
+  const [draggingHomeInsight, setDraggingHomeInsight] = useState<HomeInsightId|null>(null);
   const [cloudSession, setCloudSession] = useState<CloudSession|null>(() => loadCloudSession());
   const [cloudAuthOpen, setCloudAuthOpen] = useState(false);
-  const homeSwipeRef = useRef<{pointerId:number;startX:number;startY:number;active:boolean}>({pointerId:-1,startX:0,startY:0,active:false});
+  const homeTrackRef = useRef<HTMLDivElement>(null);
+  const homeCardRefs = useRef<Partial<Record<HomeInsightId, HTMLElement>>>({});
+  const homeDragRef = useRef<{id:HomeInsightId;pointerId:number;startX:number;active:boolean}>({id:'balance',pointerId:-1,startX:0,active:false});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
@@ -213,6 +229,7 @@ export default function App() {
       setCloudSession(session);
       if (!session) {
         setCloudAuthOpen(true);
+        setLoading(false);
         return;
       }
       setLoading(true);
@@ -465,28 +482,54 @@ export default function App() {
     say(t(lang,'allDataDeleted'));
   }
 
-  const HOME_INSIGHTS: HomeInsightId[] = DEFAULT_HOME_INSIGHTS;
-
-  const swipeHomeInsight = (delta:number) => {
-    const current = HOME_INSIGHTS.indexOf(homeInsight);
-    const next = (current + delta + HOME_INSIGHTS.length) % HOME_INSIGHTS.length;
-    setHomeInsight(HOME_INSIGHTS[next]);
+  const stopHomeInsightDrag = (e?: React.PointerEvent<HTMLButtonElement>) => {
+    const state = homeDragRef.current;
+    if (e && state.pointerId !== e.pointerId) return;
+    if (e) {
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    }
+    homeDragRef.current = {id:'balance',pointerId:-1,startX:0,active:false};
+    setDraggingHomeInsight(null);
   };
 
-  const beginHomeSwipe = (e:React.PointerEvent<HTMLElement>) => {
-    homeSwipeRef.current = {pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,active:false};
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-  };
-
-  const endHomeSwipe = (e:React.PointerEvent<HTMLElement>) => {
-    const state = homeSwipeRef.current;
+  const moveHomeInsightFromPointer = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const state = homeDragRef.current;
     if (state.pointerId !== e.pointerId) return;
-    const dx = e.clientX - state.startX;
-    const dy = e.clientY - state.startY;
-    homeSwipeRef.current = {pointerId:-1,startX:0,startY:0,active:false};
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy)) return;
-    swipeHomeInsight(dx < 0 ? 1 : -1);
+    if (!state.active) {
+      if (Math.abs(e.clientX - state.startX) < 8) return;
+      state.active = true;
+      setDraggingHomeInsight(state.id);
+    }
+
+    const track = homeTrackRef.current;
+    if (track) {
+      const r = track.getBoundingClientRect();
+      if (e.clientX < r.left + 38) track.scrollBy({left:-12,behavior:'auto'});
+      else if (e.clientX > r.right - 38) track.scrollBy({left:12,behavior:'auto'});
+    }
+
+    setSettings(prev => {
+      const remaining = prev.homeInsightOrder.filter(x => x !== state.id);
+      let insertIndex = remaining.length;
+      for (let i=0;i<remaining.length;i++) {
+        const rect = homeCardRefs.current[remaining[i]]?.getBoundingClientRect();
+        if (rect && e.clientX < rect.left + rect.width / 2) {
+          insertIndex = i;
+          break;
+        }
+      }
+      const next=[...remaining];
+      next.splice(insertIndex,0,state.id);
+      if (next.join('|') === prev.homeInsightOrder.join('|')) return prev;
+      return {...prev,homeInsightOrder:next};
+    });
+  };
+
+  const startHomeInsightDrag = (id: HomeInsightId, e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    homeDragRef.current = {id,pointerId:e.pointerId,startX:e.clientX,active:false};
   };
 
   const systemCats=cats.filter(c => c.system);
@@ -532,21 +575,53 @@ export default function App() {
           <button className="action-card expense-action" onClick={() => setModal({open:true,preset:'expense'})}><span className="action-icon">−</span><span><b>{t(lang,'registerExpense')}</b><small>{t(lang,'newOutput')}</small></span></button>
         </div>
         <section className="home-insights-section">
-          <article
-            className="home-insight-detail home-insight-swipe"
-            onPointerDown={beginHomeSwipe}
-            onPointerUp={endHomeSwipe}
-            onPointerCancel={endHomeSwipe}
-            aria-label={t(lang,'homeInsights')}
-          >
-            <div className="home-insight-symbol" aria-hidden="true">
-              {homeInsight==='balance' ? '◉' : homeInsight==='monthIncome' ? '↗' : homeInsight==='monthExpense' ? '↘' : '◷'}
+          <div className="section-head">
+            <div>
+              <h2>{t(lang,'homeInsights')}</h2>
+              <div className="muted">{t(lang,'cardHint')}</div>
             </div>
-            {homeInsight==='balance' && <><span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-            {homeInsight==='monthIncome' && <><span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-            {homeInsight==='monthExpense' && <><span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span></>}
-            {homeInsight==='latestTransaction' && <><span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span></>}
-          </article>
+          </div>
+          <div ref={homeTrackRef} className="home-card-track" aria-label={t(lang,'homeInsights')}>
+            {settings.homeInsightOrder.map(id => {
+              const cardRef = (el: HTMLElement|null) => {
+                if (el) homeCardRefs.current[id]=el;
+                else delete homeCardRefs.current[id];
+              };
+              const cardStyle = {
+                opacity: draggingHomeInsight===id ? 0.68 : 1,
+                transform: draggingHomeInsight===id ? 'scale(.98)' : undefined
+              };
+              const handle = (
+                <button
+                  type="button"
+                  className="home-card-drag-handle"
+                  aria-label={t(lang,'cardHint')}
+                  title={t(lang,'cardHint')}
+                  onPointerDown={(e) => startHomeInsightDrag(id,e)}
+                  onPointerMove={moveHomeInsightFromPointer}
+                  onPointerUp={stopHomeInsightDrag}
+                  onPointerCancel={stopHomeInsightDrag}
+                  onLostPointerCapture={stopHomeInsightDrag}
+                >⋮⋮</button>
+              );
+
+              if (id==='balance') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
+                {handle}<span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span>
+              </article>;
+
+              if (id==='monthIncome') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
+                {handle}<span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span>
+              </article>;
+
+              if (id==='monthExpense') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
+                {handle}<span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span>
+              </article>;
+
+              return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
+                {handle}<span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span>
+              </article>;
+            })}
+          </div>
         </section>
         <h2>{t(lang,'last7Days')}</h2>
         <div className="card"><div className="bars">
@@ -757,7 +832,7 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
   async function verify() {
     setError('');
     setInfo('');
-    if (!/^\d{6,8}$/.test(otp.trim())) { setError(t(lang,'otpInvalid')); return; }
+    if (!/^\d{6}$/.test(otp.trim())) { setError(t(lang,'otpInvalid')); return; }
     setBusy(true);
     try {
       const session=await verifySignupCode(email,otp);
@@ -795,7 +870,7 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
         {info && <div className="okmsg">{info}</div>}
         {error && <div className="err">{error}</div>}
         <label>{t(lang,'cloudOtp')}</label>
-        <input inputMode="numeric" autoFocus maxLength={8} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} placeholder="123456" />
+        <input inputMode="numeric" autoFocus maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} placeholder="123456" />
         <div className="row" style={{marginTop:10}}><button className="btn" disabled={busy} onClick={() => void verify()}>{t(lang,'cloudVerify')}</button><button className="btn ghost" disabled={busy} onClick={() => void resend()}>{t(lang,'cloudResendCode')}</button></div>
       </> : <>
         {info && <div className="okmsg">{info}</div>}
