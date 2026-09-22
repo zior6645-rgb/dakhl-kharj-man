@@ -37,21 +37,21 @@ export function parseAmount(value: string, currency: CurrencyCode = 'IRT'): numb
   if (hasComma && hasDot) {
     const decimalSep = comma > dot ? ',' : '.';
     const thousandSep = decimalSep === ',' ? '.' : ',';
-    s = s.replaceAll(thousandSep, '');
+    s = s.replace(thousandSep, '');
     const pos = s.lastIndexOf(decimalSep);
     s = s.slice(0,pos) + '.' + s.slice(pos + 1);
   } else if (hasComma) {
     const pos = comma;
     const suffix = s.length - pos - 1;
     if (digits === 2 && suffix >= 1 && suffix <= 2) s = s.slice(0,pos) + '.' + s.slice(pos + 1);
-    else s = s.replaceAll(',', '');
+    else s = s.split(',').join('');
   } else if (hasDot) {
     const pos = dot;
     const suffix = s.length - pos - 1;
     if (digits === 2 && suffix >= 1 && suffix <= 2) {
       // Keep a decimal point for normal 2-decimal currencies.
     } else {
-      s = s.replaceAll('.', '');
+      s = s.split('.').join('');
     }
   }
 
