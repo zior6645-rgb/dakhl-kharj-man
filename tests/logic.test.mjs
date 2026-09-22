@@ -45,6 +45,9 @@ const i18n=read('src/i18n.ts');
 const pkg=JSON.parse(read('package.json'));
 const lock=JSON.parse(read('package-lock.json'));
 const androidManifest=read('android/app/src/main/AndroidManifest.xml');
+const mainActivity=read('android/app/src/main/java/com/dakhlkharj/man/MainActivity.java');
+const fileSaver=read('android/app/src/main/java/com/dakhlkharj/man/FileSaverPlugin.java');
+const androidBuild=read('android/app/build.gradle');
 const releaseWorkflow=read('.github/workflows/release.yml');
 
 for(const token of ['HomeInsightId','homeInsightOrder','home-insights','home-card','balanceCard','monthIncomeCard','monthExpenseCard','latestTransactionCard']) {
@@ -56,9 +59,10 @@ for(const token of ['HomeInsightId','homeInsightOrder','home-insights','home-car
 
 assert(app.includes('const categoryName ='), 'custom category label resolver exists');
 assert(app.includes("import { Capacitor } from '@capacitor/core';"), 'native platform detection is available for file export');
-assert(app.includes('Capacitor.isNativePlatform()'), 'native export path is used for Android/iOS');
-assert(app.includes('navigator') && app.includes('share'), 'native file export uses the Web Share API');
-assert(app.includes('await nav.share'), 'native export waits for the share operation before showing success');
+assert(app.includes("Capacitor.getPlatform() === 'android'"), 'Android-specific export path is used');
+assert(app.includes("registerPlugin<FileSaverPlugin>('FileSaver')"), 'native FileSaver plugin is registered');
+assert(app.includes('utf8ToBase64'), 'UTF-8 content is converted to base64 for Android');
+assert(app.includes('await FileSaver.saveFile'), 'Android export calls native file saver');
 assert(app.includes("t(lang,'fileExportFailed')"), 'file export failure is reported instead of claiming success');
 assert(app.includes("t(lang,'fileShareCanceled')"), 'file share cancellation is reported');
 assert(app.includes("await deliverFile('dakhl-kharj-backup-v2.json'"), 'JSON backup uses the file delivery helper');
@@ -73,6 +77,13 @@ assert(androidManifest.includes('android:fullBackupContent="@xml/backup_rules_le
 assert(androidManifest.includes('android:usesCleartextTraffic="false"'), 'cleartext traffic disabled');
 assert(pkg.version==='1.6.0', 'package version is 1.6.0');
 assert(lock.version==='1.6.0' && lock.packages?.['']?.version==='1.6.0', 'lockfile version matches package');
+assert(mainActivity.includes('registerPlugin(FileSaverPlugin.class)'), 'Android FileSaver plugin is registered');
+assert(fileSaver.includes('@CapacitorPlugin(name = "FileSaver")'), 'native FileSaver plugin declaration exists');
+assert(fileSaver.includes('MediaStore.Downloads.EXTERNAL_CONTENT_URI'), 'native saver writes to public Downloads');
+assert(fileSaver.includes('Environment.DIRECTORY_DOWNLOADS + "/Cashio"'), 'native saver uses Downloads/Cashio');
+assert(fileSaver.includes('IS_PENDING'), 'native saver finalizes MediaStore file after writing');
+assert(androidBuild.includes('versionCode 9'), 'Android build code is incremented for the 1.6.0 fix');
+assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 
 console.log('ALL LOGIC AND SOURCE-INTEGRITY TESTS PASSED');
