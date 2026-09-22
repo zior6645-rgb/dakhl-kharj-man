@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AppSettings, Category, CurrencyCode, FontScale, HomeInsightId, LanguageCode, ThemeMode, Transaction, TxType } from './types';
+import type { AppSettings, Category, CurrencyCode, FontScale, HomeInsightId, LanguageCode, StorageMode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
 import { calcTotals, currenciesIn, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, topCategory, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
 import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
+import { cloudConfigured, ensureCloudSession, fetchCloudData, loadCloudSession, requestPasswordReset, resendSignupCode, signInWithPassword, signOut, signUp, upsertCloudCategory, upsertCloudTransaction, deleteCloudCategory, deleteCloudTransaction, deleteAllCloudData, uploadLocalCategories, uploadLocalTransactions, verifySignupCode, type CloudSession } from './cloud';
 
 const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
@@ -18,10 +19,10 @@ function loadSettings(): AppSettings {
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default' };
+      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) return { ...s, storageMode: s.storageMode === 'cloud' ? 'cloud' : 'offline', fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default' };
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', fontScale:'default' };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', storageMode:'offline', fontScale:'default' };
 }
 
 function loadCategories(): Category[] {
@@ -120,6 +121,8 @@ export default function App() {
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
   const [homeInsight, setHomeInsight] = useState<HomeInsightId>('balance');
+  const [cloudSession, setCloudSession] = useState<CloudSession|null>(() => loadCloudSession());
+  const [cloudAuthOpen, setCloudAuthOpen] = useState(false);
   const homeSwipeRef = useRef<{pointerId:number;startX:number;startY:number;active:boolean}>({pointerId:-1,startX:0,startY:0,active:false});
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -197,6 +200,39 @@ export default function App() {
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    if (settings.storageMode !== 'cloud') return;
+    let active = true;
+    (async () => {
+      const session = await ensureCloudSession();
+      if (!active) return;
+      setCloudSession(session);
+      if (!session) {
+        setCloudAuthOpen(true);
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await fetchCloudData(session);
+        if (!active) return;
+        const mergedCats = [...DEFAULT_CATS, ...data.categories.filter(c => !DEFAULT_CATS.some(d => d.id === c.id))];
+        const cloudTxs = data.transactions.map(x => normalizeTransaction(x,mergedCats,settings.currency)).filter(Boolean) as Transaction[];
+        cloudTxs.sort((a,b) => (b.date+b.time).localeCompare(a.date+a.time));
+        setCats(mergedCats);
+        setTxs(cloudTxs);
+        try {
+          localStorage.setItem(LS_FALLBACK,JSON.stringify(cloudTxs));
+          localStorage.setItem(LS_CATS,JSON.stringify(mergedCats));
+        } catch {}
+      } catch (err) {
+        say(err instanceof Error ? err.message : t(lang,'cloudSyncFailed'));
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [settings.storageMode, cloudSession?.accessToken]);
 
   const filtered = useMemo(() => {
     let r = txs.filter(t =>
@@ -276,15 +312,70 @@ export default function App() {
     const rest=isEdit ? txs.filter(x => x.id !== tx.id) : txs;
     const next=[tx,...rest].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
     persistLocal(next);
-    try { await dbPut(tx); } catch { say(t(lang,'localFallback')); }
+    if (settings.storageMode === 'cloud' && cloudSession) {
+      try {
+        await upsertCloudTransaction(cloudSession,tx);
+      } catch {
+        say(t(lang,'cloudSyncFailed'));
+      }
+    } else {
+      try { await dbPut(tx); } catch { say(t(lang,'localFallback')); }
+    }
   }
 
   async function removeTx(id:string) {
     const next=txs.filter(x => x.id !== id);
     persistLocal(next);
-    try { await dbDel(id); } catch {}
+    if (settings.storageMode === 'cloud' && cloudSession) {
+      try { await deleteCloudTransaction(cloudSession,id); } catch { say(t(lang,'cloudSyncFailed')); }
+    } else {
+      try { await dbDel(id); } catch {}
+    }
     setConfirmId(null);
     say(t(lang,'deleted'));
+  }
+
+  async function chooseStorageMode(mode:StorageMode) {
+    if (mode === 'offline') {
+      setSettings(s => ({...s,storageMode:'offline'}));
+      setCloudAuthOpen(false);
+      return;
+    }
+    if (!cloudConfigured()) {
+      say(t(lang,'cloudNotConfigured'));
+      setCloudAuthOpen(true);
+      return;
+    }
+    const session = await ensureCloudSession();
+    if (!session) {
+      setCloudAuthOpen(true);
+      return;
+    }
+    setCloudSession(session);
+    setSettings(s => ({...s,storageMode:'cloud'}));
+  }
+
+  async function uploadLocalToCloud() {
+    if (!cloudSession) { setCloudAuthOpen(true); return; }
+    try {
+      await uploadLocalTransactions(cloudSession,txs);
+      await uploadLocalCategories(cloudSession,cats);
+      say(t(lang,'cloudImportedLocal'));
+      const data=await fetchCloudData(cloudSession);
+      const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c=>!DEFAULT_CATS.some(d=>d.id===c.id))];
+      setCats(mergedCats);
+      setTxs(data.transactions.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)));
+      try { localStorage.setItem(LS_FALLBACK,JSON.stringify(data.transactions)); localStorage.setItem(LS_CATS,JSON.stringify(mergedCats)); } catch {}
+    } catch {
+      say(t(lang,'cloudSyncFailed'));
+    }
+  }
+
+  async function cloudLogout() {
+    await signOut();
+    setCloudSession(null);
+    setSettings(s => ({...s,storageMode:'offline'}));
+    say(t(lang,'cloudSignedOut'));
   }
 
   function exportJSON() {
@@ -324,22 +415,25 @@ export default function App() {
     } catch { say(t(lang,'invalidFileKeepData')); }
   }
 
-  function addCategory() {
+  async function addCategory() {
     const label=newCat.trim();
     if (!label) { say(t(lang,'categoryNameRequired')); return; }
     if (label.length>80) return;
     if (cats.some(c => c.label.toLocaleLowerCase(locale) === label.toLocaleLowerCase(locale))) { say(t(lang,'categoryExists')); return; }
-    setCats(prev => [...prev,{id:'cat-'+uid(),label,kind:newCatKind}]);
+    const created={id:'cat-'+uid(),label,kind:newCatKind};
+    setCats(prev => [...prev,created]);
     setNewCat('');
+    if (settings.storageMode==='cloud' && cloudSession) { try { await upsertCloudCategory(cloudSession,created); } catch { say(t(lang,'cloudSyncFailed')); return; } }
     say(t(lang,'categoryAdded'));
   }
 
-  function delCategory(id:string) {
+  async function delCategory(id:string) {
     const c=cats.find(x => x.id===id);
     if (!c) return;
     if (c.system) { say(t(lang,'defaultCategoryCannotDelete')); return; }
     if (txs.some(x => x.category===id)) { say(t(lang,'categoryHasTransactions')); return; }
     setCats(prev => prev.filter(x => x.id!==id));
+    if (settings.storageMode==='cloud' && cloudSession) { try { await deleteCloudCategory(cloudSession,id); } catch { say(t(lang,'cloudSyncFailed')); return; } }
     say(t(lang,'categoryDeleted'));
   }
 
@@ -353,6 +447,9 @@ export default function App() {
     setCats(DEFAULT_CATS);
     setWipeStep(0);
     try { await dbClear(); } catch {}
+    if (settings.storageMode==='cloud' && cloudSession) {
+      try { await deleteAllCloudData(cloudSession); } catch { say(t(lang,'cloudSyncFailed')); return; }
+    }
     say(t(lang,'allDataDeleted'));
   }
 
@@ -532,6 +629,25 @@ export default function App() {
         </div>
 
         <div className="card" style={{marginTop:10}}>
+          <h3>{t(lang,'storageMode')}</h3>
+          <div className="row">
+            <button className={settings.storageMode==='offline'?'btn':'btn ghost'} onClick={() => void chooseStorageMode('offline')}>{t(lang,'offlineMode')}</button>
+            <button className={settings.storageMode==='cloud'?'btn':'btn ghost'} onClick={() => void chooseStorageMode('cloud')}>{t(lang,'cloudMode')}</button>
+          </div>
+          {settings.storageMode==='cloud' && cloudSession ? <>
+            <div className="cloud-account">
+              <b>{t(lang,'cloudAccount')}</b>
+              <span>{cloudSession.email}</span>
+            </div>
+            <div className="row" style={{marginTop:8}}>
+              <button className="btn ghost" onClick={() => void uploadLocalToCloud()}>{t(lang,'cloudTransferLocal')}</button>
+              <button className="btn ghost" onClick={() => void cloudLogout()}>{t(lang,'cloudLogout')}</button>
+            </div>
+          </> : settings.storageMode==='cloud' ? <div className="currency-note">{t(lang,'cloudModeRequiresAccount')}</div> : null}
+          {!cloudConfigured() && <div className="currency-note">{t(lang,'cloudConfigureHint')}</div>}
+        </div>
+
+        <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'language')}</h3>
           <select value={lang} onChange={e => { const next=e.target.value as LanguageCode; setSettings(s=>({...s,language:next})); say(t(next,'languageReload')); }}>
             {(Object.keys(LANGUAGE_NAMES) as LanguageCode[]).map(x => <option value={x} key={x}>{LANGUAGE_NAMES[x]}</option>)}
@@ -584,9 +700,104 @@ export default function App() {
       <button className={tab==='settings'?'on':''} onClick={() => setTab('settings')}><span>⚙</span><small>{t(lang,'settingsTab')}</small></button>
     </nav>
 
+    {cloudAuthOpen && <CloudAuthModal lang={lang} onClose={() => setCloudAuthOpen(false)} onAuthenticated={(session) => { setCloudSession(session); setCloudAuthOpen(false); setSettings(s => ({...s,storageMode:'cloud'})); }} />}
     {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
     {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
+}
+
+function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClose:()=>void;onAuthenticated:(session:CloudSession)=>void}) {
+  const [mode,setMode]=useState<'login'|'signup'>('login');
+  const [step,setStep]=useState<'form'|'verify'>('form');
+  const [email,setEmail]=useState('');
+  const [password,setPassword]=useState('');
+  const [confirmPassword,setConfirmPassword]=useState('');
+  const [otp,setOtp]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [info,setInfo]=useState('');
+
+  async function submit() {
+    setError('');
+    setInfo('');
+    const normalized=email.trim().toLowerCase();
+    if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) { setError(t(lang,'invalidEmail')); return; }
+    if (password.length<8) { setError(t(lang,'passwordTooShort')); return; }
+    if (mode==='signup' && password!==confirmPassword) { setError(t(lang,'passwordsMismatch')); return; }
+    if (!cloudConfigured()) { setError(t(lang,'cloudNotConfigured')); return; }
+    setBusy(true);
+    try {
+      if (mode==='signup') {
+        await signUp(normalized,password);
+        setStep('verify');
+        setInfo(t(lang,'cloudOtpSent'));
+      } else {
+        const session=await signInWithPassword(normalized,password);
+        onAuthenticated(session);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify() {
+    setError('');
+    setInfo('');
+    if (!/^\d{6,8}$/.test(otp.trim())) { setError(t(lang,'otpInvalid')); return; }
+    setBusy(true);
+    try {
+      const session=await verifySignupCode(email,otp);
+      if (session) onAuthenticated(session);
+      else {
+        const signed=await signInWithPassword(email,password);
+        onAuthenticated(signed);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resend() {
+    setError('');
+    setInfo('');
+    try { await resendSignupCode(email); setInfo(t(lang,'cloudOtpSent')); } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
+  async function resetPassword() {
+    setError('');
+    setInfo('');
+    const normalized=email.trim().toLowerCase();
+    if (!normalized) { setError(t(lang,'invalidEmail')); return; }
+    try { await requestPasswordReset(normalized); setInfo(t(lang,'cloudPasswordResetSent')); } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
+  return <div className="modal" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className="sheet cloud-auth-sheet" onClick={e => e.stopPropagation()}>
+      <div className="sheet-head"><h3>{mode==='signup'?t(lang,'cloudSignUp'):t(lang,'cloudSignIn')}</h3><button className="btn ghost" onClick={onClose}>×</button></div>
+      {!cloudConfigured() ? <div className="err">{t(lang,'cloudConfigureHint')}</div> : step==='verify' ? <>
+        <p className="muted">{t(lang,'cloudEmailCodeHint')} <b>{email}</b></p>
+        {info && <div className="okmsg">{info}</div>}
+        {error && <div className="err">{error}</div>}
+        <label>{t(lang,'cloudOtp')}</label>
+        <input inputMode="numeric" autoFocus maxLength={8} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,''))} placeholder="123456" />
+        <div className="row" style={{marginTop:10}}><button className="btn" disabled={busy} onClick={() => void verify()}>{t(lang,'cloudVerify')}</button><button className="btn ghost" disabled={busy} onClick={() => void resend()}>{t(lang,'cloudResendCode')}</button></div>
+      </> : <>
+        {info && <div className="okmsg">{info}</div>}
+        {error && <div className="err">{error}</div>}
+        <label>{t(lang,'cloudEmail')}</label>
+        <input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} />
+        <label>{t(lang,'cloudPassword')}</label>
+        <input type="password" autoComplete={mode==='signup'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)} />
+        {mode==='signup' && <><label>{t(lang,'cloudConfirmPassword')}</label><input type="password" autoComplete="new-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></>}
+        <div className="row" style={{marginTop:12}}><button className="btn" disabled={busy} onClick={() => void submit()}>{mode==='signup'?t(lang,'cloudSignUp'):t(lang,'cloudSignIn')}</button>{mode==='login' && <button className="btn ghost" disabled={busy} onClick={() => void resetPassword()}>{t(lang,'cloudForgotPassword')}</button>}</div>
+        <button className="btn ghost cloud-switch" disabled={busy} onClick={() => {setMode(mode==='login'?'signup':'login');setError('');setInfo('');}}>{mode==='login'?t(lang,'cloudCreateAccount'):t(lang,'cloudExistingAccount')}</button>
+      </>}
+    </div>
+  </div>;
 }
 
 function TxModal({lang,preset,edit,cats,defaultCurrency,onClose,onSave}:{lang:LanguageCode;preset:TxType;edit?:Transaction;cats:Category[];defaultCurrency:CurrencyCode;onClose:()=>void;onSave:(t:Transaction,isEdit:boolean)=>Promise<void>}) {
