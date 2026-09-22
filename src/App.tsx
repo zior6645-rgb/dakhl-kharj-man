@@ -38,15 +38,21 @@ function loadCats(): Category[] {
   return DEFAULT_CATS;
 }
 function loadTheme(): ThemeMode {
-  const s = localStorage.getItem(LS_THEME);
-  return s === 'light' || s === 'dark' || s === 'system' ? s : 'system';
+  try {
+    const s = localStorage.getItem(LS_THEME);
+    return s === 'light' || s === 'dark' || s === 'system' ? s : 'system';
+  } catch {
+    return 'system';
+  }
 }
 function applyTheme(m: ThemeMode) {
   const root = document.documentElement;
   if (m === 'system') {
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
     root.setAttribute('data-theme', dark ? 'dark' : 'light');
-  } else root.setAttribute('data-theme', m);
+  } else {
+    root.setAttribute('data-theme', m);
+  }
 }
 
 type Tab = 'home' | 'txs' | 'reports' | 'settings';
@@ -94,14 +100,24 @@ export default function App() {
 
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2600); };
 
-  useEffect(() => { applyTheme(theme); localStorage.setItem(LS_THEME, theme); }, [theme]);
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const fn = () => { const s = localStorage.getItem(LS_THEME) as ThemeMode; if (!s || s === 'system') applyTheme('system'); };
-    mq.addEventListener?.('change', fn);
-    return () => mq.removeEventListener?.('change', fn);
+    applyTheme(theme);
+    try { localStorage.setItem(LS_THEME, theme); } catch { /* storage may be unavailable */ }
+  }, [theme]);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const fn = () => { 
+      try {
+        const s = localStorage.getItem(LS_THEME) as ThemeMode;
+        if (!s || s === 'system') applyTheme('system');
+      } catch { applyTheme('system'); }
+    };
+    mq?.addEventListener?.('change', fn);
+    return () => mq?.removeEventListener?.('change', fn);
   }, []);
-  useEffect(() => { localStorage.setItem(LS_CATS, JSON.stringify(cats)); }, [cats]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_CATS, JSON.stringify(cats)); } catch { /* storage may be unavailable */ }
+  }, [cats]);
 
   useEffect(() => {
     (async () => {
