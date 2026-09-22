@@ -1,135 +1,137 @@
-import type { Category, Transaction } from './types';
-import { isValidDateString, parseAmount, todayStr } from './utils';
+import type { Category, Transaction, CurrencyCode } from './types';
+import { CURRENCY_MAP } from './currencies';
+import { isValidDateString, parseAmount } from './utils';
 
-export function calcTotals(list: Transaction[]) {
+export function calcTotals(list: Transaction[], currency?: CurrencyCode) {
   let income = 0, expense = 0;
-  for (const t of list) {
+  const scoped = currency ? list.filter(t => t.currency === currency) : list;
+  for (const t of scoped) {
     if (t.type === 'income') income += t.amount;
     else expense += t.amount;
   }
-  return { income, expense, balance: income - expense, count: list.length };
+  return { income, expense, balance: income - expense, count: scoped.length };
+}
+
+export function currenciesIn(list: Transaction[]): CurrencyCode[] {
+  return [...new Set(list.map(t => t.currency))];
 }
 
 export function monthKey(d: string) { return d.slice(0, 7); }
 
-export function filterByDateRange(list: Transaction[], from: string, to: string) {
-  return list.filter(t => (!from || t.date >= from) && (!to || t.date <= to));
+export function filterByDateRange(list: Transaction[], from: string, to: string, currency?: CurrencyCode) {
+  return list.filter(t => (!from || t.date >= from) && (!to || t.date <= to) && (!currency || t.currency === currency));
 }
 
-export function groupByDay(list: Transaction[], days: string[]) {
-  const map = new Map<string, { income: number; expense: number }>();
-  for (const d of days) map.set(d, { income: 0, expense: 0 });
+export function groupByDay(list: Transaction[], days: string[], currency?: CurrencyCode) {
+  const map = new Map<string,{income:number;expense:number}>();
+  for (const d of days) map.set(d,{income:0,expense:0});
   for (const t of list) {
+    if (currency && t.currency !== currency) continue;
     const e = map.get(t.date);
-    if (e) {
-      if (t.type === 'income') e.income += t.amount;
-      else e.expense += t.amount;
-    }
+    if (!e) continue;
+    if (t.type === 'income') e.income += t.amount; else e.expense += t.amount;
   }
-  return days.map(d => ({ date: d, ...(map.get(d) as { income: number; expense: number }) }));
+  return days.map(d => ({ date:d, ...(map.get(d) as {income:number;expense:number}) }));
 }
 
-export function groupByMonth(list: Transaction[], months: string[]) {
-  const map = new Map<string, { income: number; expense: number }>();
-  for (const m of months) map.set(m, { income: 0, expense: 0 });
+export function groupByMonth(list: Transaction[], months: string[], currency?: CurrencyCode) {
+  const map = new Map<string,{income:number;expense:number}>();
+  for (const m of months) map.set(m,{income:0,expense:0});
   for (const t of list) {
-    const key = monthKey(t.date);
-    const e = map.get(key);
-    if (e) {
-      if (t.type === 'income') e.income += t.amount;
-      else e.expense += t.amount;
-    }
+    if (currency && t.currency !== currency) continue;
+    const e = map.get(monthKey(t.date));
+    if (!e) continue;
+    if (t.type === 'income') e.income += t.amount; else e.expense += t.amount;
   }
-  return months.map(month => ({ date: month, ...(map.get(month) as { income: number; expense: number }) }));
+  return months.map(m => ({ date:m, ...(map.get(m) as {income:number;expense:number}) }));
 }
 
-export function groupByCategory(list: Transaction[], type: 'income' | 'expense') {
-  const m = new Map<string, number>();
-  for (const t of list) if (t.type === type) m.set(t.category, (m.get(t.category) ?? 0) + t.amount);
-  return [...m.entries()].map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
+export function groupByCategory(list: Transaction[], type:'income'|'expense', currency?:CurrencyCode) {
+  const m = new Map<string,number>();
+  for (const t of list) if (t.type === type && (!currency || t.currency === currency)) m.set(t.category,(m.get(t.category) ?? 0)+t.amount);
+  return [...m.entries()].map(([category,total]) => ({category,total})).sort((a,b)=>b.total-a.total);
 }
 
-export function topCategory(list: Transaction[]): string {
-  const g = groupByCategory(list, 'expense');
+export function topCategory(list: Transaction[], currency?: CurrencyCode): string {
+  const g = groupByCategory(list,'expense',currency);
   return g.length ? g[0].category : '—';
 }
 
-export function validateTx(input: { type: string; amount: string; title: string; category: string; date: string }): string[] {
-  const errs: string[] = [];
-  const amt = parseAmount(input.amount);
-  if (!input.amount || String(input.amount).trim() === '') errs.push('مبلغ را وارد کنید.');
-  else if (amt === null) errs.push('مبلغ نامعتبر است؛ فقط عدد صحیح بزرگ‌تر از صفر وارد کنید.');
-  if (!input.title || input.title.trim() === '') errs.push('عنوان را وارد کنید.');
-  else if (input.title.trim().length > 120) errs.push('عنوان بیش از حد طولانی است.');
-  if (input.type !== 'income' && input.type !== 'expense') errs.push('نوع تراکنش معتبر نیست.');
-  if (!input.category || input.category.trim() === '') errs.push('دسته‌بندی را انتخاب کنید.');
-  if (!input.date || !isValidDateString(input.date)) errs.push('تاریخ نامعتبر است.');
+export function validateTx(input:{type:string;amount:string;title:string;category:string;date:string;time:string;currency:CurrencyCode}) {
+  const errs:string[]=[];
+  const amt=parseAmount(input.amount,input.currency);
+  if (!input.amount.trim() || amt===null) errs.push('amount');
+  if (!input.title.trim()) errs.push('title');
+  else if (input.title.trim().length>120) errs.push('title');
+  if (input.type!=='income' && input.type!=='expense') errs.push('type');
+  if (!input.category.trim()) errs.push('category');
+  if (!input.date || !isValidDateString(input.date)) errs.push('date');
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.time)) errs.push('time');
   return errs;
 }
 
-function validTime(value: unknown): boolean {
-  return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
-}
+function validTime(v:unknown):boolean { return typeof v==='string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v); }
+function validCurrency(v:unknown):v is CurrencyCode { return typeof v==='string' && Object.prototype.hasOwnProperty.call(CURRENCY_MAP,v); }
 
-function validCategoryList(value: unknown): value is Category[] {
-  if (!Array.isArray(value)) return false;
-  const ids = new Set<string>();
-  const labels = new Set<string>();
-  for (const item of value) {
-    const c = item as Record<string, unknown>;
-    if (!c || typeof c.id !== 'string' || !c.id || ids.has(c.id)) return false;
-    if (typeof c.label !== 'string' || !c.label.trim() || c.label.length > 80 || labels.has(c.label)) return false;
-    if (c.kind !== 'income' && c.kind !== 'expense' && c.kind !== 'both') return false;
-    ids.add(c.id);
-    labels.add(c.label);
+function validCategoryList(v:unknown): v is Category[] {
+  if (!Array.isArray(v)) return false;
+  const ids=new Set<string>();
+  const labels=new Set<string>();
+  for (const item of v) {
+    const c=item as Record<string,unknown>;
+    if (!c || typeof c.id!=='string' || !c.id || ids.has(c.id)) return false;
+    if (typeof c.label!=='string' || !c.label.trim() || c.label.length>80 || labels.has(c.label)) return false;
+    if (c.kind!=='income' && c.kind!=='expense' && c.kind!=='both') return false;
+    ids.add(c.id); labels.add(c.label);
   }
   return true;
 }
 
-export function validateBackup(obj: unknown): string | null {
-  if (!obj || typeof obj !== 'object') return 'ساختار فایل معتبر نیست.';
-  const o = obj as Record<string, unknown>;
-  if (o.version !== undefined && o.version !== 1) return 'نسخه فایل پشتیبان پشتیبانی نمی‌شود.';
-  if (!Array.isArray(o.transactions)) return 'فایل پشتیبان تراکنش‌ها را ندارد.';
-  if (o.categories !== undefined && !validCategoryList(o.categories)) return 'دسته‌بندی‌های فایل پشتیبان معتبر نیستند.';
-
-  const ids = new Set<string>();
+export function validateBackup(obj:unknown):string|null {
+  if (!obj || typeof obj!=='object') return 'structure';
+  const o=obj as Record<string,unknown>;
+  const version=o.version ?? 1;
+  if (version!==1 && version!==2) return 'version';
+  if (!Array.isArray(o.transactions)) return 'transactions';
+  if (o.categories!==undefined && !validCategoryList(o.categories)) return 'categories';
+  const ids=new Set<string>();
   for (const item of o.transactions as unknown[]) {
-    const r = item as Record<string, unknown>;
-    if (!r || typeof r.id !== 'string' || !r.id || ids.has(r.id)) return 'یک تراکنش در فایل خراب است (شناسه).';
-    if (r.type !== 'income' && r.type !== 'expense') return 'یک تراکنش در فایل خراب است (نوع).';
-    if (typeof r.amount !== 'number' || !Number.isSafeInteger(r.amount) || r.amount <= 0) return 'یک تراکنش در فایل خراب است (مبلغ).';
-    if (typeof r.title !== 'string' || !r.title.trim() || r.title.length > 120) return 'یک تراکنش در فایل خراب است (عنوان).';
-    if (typeof r.category !== 'string' || !r.category.trim() || r.category.length > 80) return 'یک تراکنش در فایل خراب است (دسته‌بندی).';
-    if (typeof r.date !== 'string' || !isValidDateString(r.date)) return 'یک تراکنش در فایل خراب است (تاریخ).';
-    if (!validTime(r.time)) return 'یک تراکنش در فایل خراب است (ساعت).';
-    if (typeof r.description !== 'string' || r.description.length > 500) return 'یک تراکنش در فایل خراب است (توضیح).';
-    if (r.createdAt !== undefined && typeof r.createdAt !== 'string') return 'یک تراکنش در فایل خراب است (زمان ایجاد).';
-    if (r.updatedAt !== undefined && typeof r.updatedAt !== 'string') return 'یک تراکنش در فایل خراب است (زمان ویرایش).';
+    const r=item as Record<string,unknown>;
+    if (!r || typeof r.id!=='string' || !r.id || ids.has(r.id)) return 'id';
+    if (r.type!=='income' && r.type!=='expense') return 'type';
+    if (typeof r.amount!=='number' || !Number.isFinite(r.amount) || !Number.isSafeInteger(Math.round(r.amount*100)) || r.amount<=0) return 'amount';
+    if (typeof r.title!=='string' || !r.title.trim() || r.title.length>120) return 'title';
+    if (typeof r.category!=='string' || !r.category.trim() || r.category.length>80) return 'category';
+    if (typeof r.date!=='string' || !isValidDateString(r.date)) return 'date';
+    if (!validTime(r.time)) return 'time';
+    if (typeof r.description!=='string' || r.description.length>500) return 'description';
+    if (version>=2 && !validCurrency(r.currency)) return 'currency';
+    if (r.createdAt!==undefined && typeof r.createdAt!=='string') return 'createdAt';
+    if (r.updatedAt!==undefined && typeof r.updatedAt!=='string') return 'updatedAt';
     ids.add(r.id);
   }
   return null;
 }
 
-export function lastNDays(n: number, base = new Date()): string[] {
-  const out: string[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(base);
-    d.setHours(12, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    out.push(todayStr(d));
+export function lastNDays(n:number, base=new Date()):string[] {
+  const out:string[]=[];
+  for (let i=n-1;i>=0;i--) {
+    const d=new Date(base);
+    d.setHours(12,0,0,0);
+    d.setDate(d.getDate()-i);
+    out.push([d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'));
   }
   return out;
 }
 
-export function lastNMonths(n: number, base = new Date()): string[] {
-  const out: string[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(base);
-    d.setHours(12, 0, 0, 0);
+export function lastNMonths(n:number, base=new Date()):string[] {
+  const out:string[]=[];
+  for (let i=n-1;i>=0;i--) {
+    const d=new Date(base);
+    d.setHours(12,0,0,0);
     d.setDate(1);
-    d.setMonth(d.getMonth() - i);
-    out.push(todayStr(d).slice(0, 7));
+    d.setMonth(d.getMonth()-i);
+    out.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
   }
   return out;
 }
