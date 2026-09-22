@@ -1,44 +1,10 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-
-    <!-- Simple finance/wallet mark -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M25,34
-            C25,29 29,25 34,25
-            L74,25
-            C79,25 83,29 83,34
-            L83,74
-            C83,79 79,83 74,83
-            L34,83
-            C29,83 25,79 25,74 Z" />
-
-    <path
-        android:fillColor="#26A69A"
-        android:pathData="M25,47
-            L78,47
-            C82,47 85,50 85,54
-            L85,68
-            C85,73 81,77 76,77
-            L34,77
-            C29,77 25,73 25,68 Z" />
-
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M65,54
-            C60,54 56,58 56,63
-            C56,68 60,72 65,72
-            L82,72
-            L82,54 Z" />
-
-    <path
-        android:fillColor="#26A69A"
-        android:pathData="M67,59
-            C64.2,59 62,61.2 62,64
-            C62,66.8 64.2,69 67,69
-            C69.8,69 72,66.8 72,64
-            C72,61.2 69.8,59 67,59 Z" />
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <path android:fillColor="#FFFFFFFF" android:pathData="M23,39 C23,32 29,26 36,26 L70,26 C77,26 83,32 83,39 L83,72 C83,79 77,85 70,85 L36,85 C29,85 23,79 23,72 Z"/>
+  <path android:fillColor="#FF1CC8AA" android:pathData="M23,49 L78,49 C82,49 85,52 85,56 L85,69 C85,75 80,80 74,80 L34,80 C28,80 23,75 23,69 Z"/>
+  <path android:fillColor="#FFFFFFFF" android:pathData="M64,54 C58.5,54 54,58.5 54,64 C54,69.5 58.5,74 64,74 L84,74 L84,54 Z"/>
+  <path android:fillColor="#FF075E58" android:pathData="M65,59 C62.2,59 60,61.2 60,64 C60,66.8 62.2,69 65,69 C67.8,69 70,66.8 70,64 C70,61.2 67.8,59 65,59 Z"/>
+  <path android:fillColor="#FFFFD76A" android:pathData="M36,35 C36,29.5 40.5,25 46,25 C51.5,25 56,29.5 56,35 C56,40.5 51.5,45 46,45 C40.5,45 36,40.5 36,35 Z"/>
+  <path android:strokeColor="#FFD58E00" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M41,35h10M46,30v10"/>
+  <path android:strokeColor="#FF63F4C8" android:strokeWidth="4" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="@android:color/transparent" android:pathData="M55,33 L67,23 L77,28 L91,15"/>
+  <path android:strokeColor="#FFD5FFF7" android:strokeWidth="4" android:strokeLineCap="round" android:fillColor="@android:color/transparent" android:pathData="M88,15h-10M88,15v10"/>
 </vector>
