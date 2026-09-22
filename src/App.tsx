@@ -5,7 +5,7 @@ import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
 import { calcTotals, currenciesIn, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, topCategory, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
-import { displayDate, fmtMoney, fmtNum, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
+import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
 
 const LS_SETTINGS = 'dk-settings-v2';
 const LS_CATS = 'dk-cats';
@@ -50,7 +50,7 @@ function normalizeTransaction(raw: any, customCategories: Category[], defaultCur
   const category = normalizedCategory !== categoryRaw ? normalizedCategory : (custom?.id ?? categoryRaw);
   if (!category) return null;
   if (typeof raw.title !== 'string' || !raw.title.trim() || raw.title.length > 120) return null;
-  if (typeof raw.date !== 'string' || typeof raw.time !== 'string' || typeof raw.description !== 'string') return null;
+  if (typeof raw.date !== 'string' || !isValidDateString(raw.date) || typeof raw.time !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(raw.time) || typeof raw.description !== 'string' || raw.description.length > 500) return null;
   return {
     id: raw.id,
     type,
