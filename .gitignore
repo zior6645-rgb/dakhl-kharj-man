@@ -5,3 +5,4 @@ dist/
 android/.gradle/
 android/app/build/
 android/capacitor-cordova-android-plugins/build/
+\n*.keystore\n*.jks\n
