@@ -249,7 +249,7 @@ export default function App() {
     <>
       <header className="top">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true"><span>₺</span></div>
+          <div className="brand-mark" aria-hidden="true"><span>ت</span></div>
           <div>
             <h1>دخل‌وخرج من</h1>
             <p>مدیریت ساده و آفلاین</p>
@@ -273,7 +273,7 @@ export default function App() {
                   <div className="hero-balance">{fmt(totals.balance)}</div>
                   <div className="hero-note">درآمد و هزینه‌های ثبت‌شده روی همین دستگاه</div>
                 </div>
-                <div className="hero-chip" aria-hidden="true">₺</div>
+                <div className="hero-chip" aria-hidden="true">ت</div>
               </div>
               <div className="hero-stats">
                 <div><span>درآمد کل</span><b>{fmt(totals.income)}</b></div>
