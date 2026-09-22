@@ -1,4 +1,4 @@
-export const uid = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+export const uid = () => (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 export const nowISO = () => new Date().toISOString();
 
 export function todayStr(d = new Date()): string {
