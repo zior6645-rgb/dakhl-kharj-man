@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AppSettings, Category, CurrencyCode, FontScale, HomeInsightId, LanguageCode, StorageMode, ThemeMode, Transaction, TxType } from './types';
+import type { AppSettings, Category, CurrencyCode, FontScale, LanguageCode, StorageMode, ThemeMode, Transaction, TxType } from './types';
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
-import { calcTotals, currenciesIn, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, topCategory, validateBackup, validateTx } from './finance';
+import { calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
 import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
 import { cloudConfigured, ensureCloudSession, fetchCloudData, loadCloudSession, requestPasswordReset, resendSignupCode, signInWithPassword, signOut, signUp, upsertCloudCategory, upsertCloudTransaction, deleteCloudCategory, deleteCloudTransaction, deleteAllCloudData, uploadLocalCategories, uploadLocalTransactions, verifySignupCode, type CloudSession } from './cloud';
@@ -14,31 +14,23 @@ const LS_FALLBACK = 'dk-txs-fallback';
 const LS_CLOUD_FALLBACK = 'dk-cloud-txs-cache';
 const LS_CLOUD_CATS = 'dk-cloud-cats-cache';
 const LS_WIPED = 'dk-txs-wiped';
-const DEFAULT_HOME_INSIGHTS: HomeInsightId[] = ['balance','monthIncome','monthExpense','latestTransaction'];
-
 function loadSettings(): AppSettings {
-  const defaultOrder: HomeInsightId[] = [...DEFAULT_HOME_INSIGHTS];
   try {
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
-      const s = JSON.parse(raw);
-      if (s && ['fa','en','ru','ar','tr'].includes(s.language) && CURRENCY_MAP[s.currency as CurrencyCode] && ['light','dark','system'].includes(s.theme)) {
-        const savedOrder = Array.isArray(s.homeInsightOrder)
-          ? s.homeInsightOrder
-              .filter((x: unknown): x is HomeInsightId => defaultOrder.includes(x as HomeInsightId))
-              .filter((x: HomeInsightId, i: number, arr: HomeInsightId[]) => arr.indexOf(x) === i)
-          : [];
-        const homeInsightOrder = savedOrder.length === defaultOrder.length ? savedOrder : defaultOrder;
+      const value = JSON.parse(raw);
+      if (value && ['fa','en','ru','ar','tr'].includes(value.language) && CURRENCY_MAP[value.currency as CurrencyCode] && ['light','dark','system'].includes(value.theme)) {
         return {
-          ...s,
-          storageMode: s.storageMode === 'cloud' ? 'cloud' : 'offline',
-          fontScale: ['small','default','large','xlarge','xxlarge'].includes(s.fontScale) ? s.fontScale : 'default',
-          homeInsightOrder
+          language: value.language,
+          currency: value.currency,
+          theme: value.theme,
+          storageMode: value.storageMode === 'cloud' && cloudConfigured() ? 'cloud' : 'offline',
+          fontScale: ['small','default','large','xlarge','xxlarge'].includes(value.fontScale) ? value.fontScale : 'default'
         };
       }
     }
   } catch {}
-  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', storageMode:'offline', fontScale:'default', homeInsightOrder:defaultOrder };
+  return { language:'fa', currency:DEFAULT_CURRENCY, theme:'system', storageMode:'offline', fontScale:'default' };
 }
 
 function loadCategories(): Category[] {
@@ -136,17 +128,14 @@ export default function App() {
   const [wipeStep, setWipeStep] = useState(0);
   const [newCat, setNewCat] = useState('');
   const [newCatKind, setNewCatKind] = useState<'income'|'expense'|'both'>('expense');
-  const [draggingHomeInsight, setDraggingHomeInsight] = useState<HomeInsightId|null>(null);
   const [cloudSession, setCloudSession] = useState<CloudSession|null>(() => loadCloudSession());
   const [cloudAuthOpen, setCloudAuthOpen] = useState(false);
-  const homeTrackRef = useRef<HTMLDivElement>(null);
-  const homeCardRefs = useRef<Partial<Record<HomeInsightId, HTMLElement>>>({});
-  const homeDragRef = useRef<{id:HomeInsightId;pointerId:number;startY:number;active:boolean}>({id:'balance',pointerId:-1,startY:0,active:false});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const lang = settings.language;
   const locale = localeForLanguage(lang);
   const fontScale: FontScale = settings.fontScale ?? 'default';
+  const categoryName = (id: string) => categoryLabel(id, cats.find(c => c.id === id)?.label ?? id, lang);
 
   const say = (m:string) => { setToast(m); window.setTimeout(() => setToast(''), 2800); };
 
@@ -264,7 +253,7 @@ export default function App() {
     );
     const needle = q.trim().toLocaleLowerCase(locale);
     if (needle) {
-      r = r.filter(t => [t.title,t.description,categoryLabel(t.category,'',lang),t.currency].some(v => v.toLocaleLowerCase(locale).includes(needle)));
+      r = r.filter(t => [t.title,t.description,categoryName(t.category),t.currency].some(v => v.toLocaleLowerCase(locale).includes(needle)));
     }
     r.sort((a,b) => {
       if (sort === 'new') return (b.date+b.time).localeCompare(a.date+a.time);
@@ -276,14 +265,10 @@ export default function App() {
   }, [txs,fType,fCat,fCurrency,fFrom,fTo,q,sort,lang,locale]);
 
   const currentTotals = useMemo(() => calcTotals(txs,settings.currency), [txs,settings.currency]);
-  const monthKey = todayStr().slice(0,7);
-  const monthTotals = useMemo(() => calcTotals(txs.filter(x => x.date.slice(0,7) === monthKey),settings.currency), [txs,settings.currency,monthKey]);
   const days7 = useMemo(() => lastNDays(7), []);
   const trend7 = useMemo(() => groupByDay(txs,days7,settings.currency), [txs,days7,settings.currency]);
   const max7 = Math.max(1,...trend7.flatMap(x => [x.income,x.expense]));
-  const balances = useMemo(() => currenciesIn(txs).map(c => ({code:c, ...calcTotals(txs,c)})), [txs]);
   const latest = txs[0];
-  const topExpenseLabel = topCategory(txs,settings.currency);
 
   const pr = periodRange(period,cFrom,cTo);
   const reportTxs = useMemo(() => filterByDateRange(txs,pr.from,pr.to,reportCurrency), [txs,pr.from,pr.to,reportCurrency]);
@@ -415,7 +400,7 @@ export default function App() {
   }
 
   function exportCSVFile() {
-    const rows=txs.map(x => ({...x, category:categoryLabel(x.category,x.category,lang), currency:x.currency}));
+    const rows=txs.map(x => ({...x, category:categoryName(x.category), currency:x.currency}));
     const blob=new Blob(['\ufeff'+toCSV(rows)],{type:'text/csv;charset=utf-8'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download='dakhl-kharj.csv'; a.click();
@@ -482,56 +467,6 @@ export default function App() {
     say(t(lang,'allDataDeleted'));
   }
 
-  const stopHomeInsightDrag = (e?: React.PointerEvent<HTMLButtonElement>) => {
-    const state = homeDragRef.current;
-    if (e && state.pointerId !== e.pointerId) return;
-    if (e) {
-      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-    }
-    homeDragRef.current = {id:'balance',pointerId:-1,startY:0,active:false};
-    setDraggingHomeInsight(null);
-  };
-
-  const moveHomeInsightFromPointer = (e: React.PointerEvent<HTMLButtonElement>) => {
-    const state = homeDragRef.current;
-    if (state.pointerId !== e.pointerId) return;
-    if (!state.active) {
-      if (Math.abs(e.clientY - state.startY) < 8) return;
-      state.active = true;
-      setDraggingHomeInsight(state.id);
-    }
-
-    const track = homeTrackRef.current;
-    if (track) {
-      const r = track.getBoundingClientRect();
-      if (e.clientY < r.top + 38) track.scrollBy({top:-12,behavior:'auto'});
-      else if (e.clientY > r.bottom - 38) track.scrollBy({top:12,behavior:'auto'});
-    }
-
-    setSettings(prev => {
-      const remaining = prev.homeInsightOrder.filter(x => x !== state.id);
-      let insertIndex = remaining.length;
-      for (let i=0;i<remaining.length;i++) {
-        const rect = homeCardRefs.current[remaining[i]]?.getBoundingClientRect();
-        if (rect && e.clientY < rect.top + rect.height / 2) {
-          insertIndex = i;
-          break;
-        }
-      }
-      const next=[...remaining];
-      next.splice(insertIndex,0,state.id);
-      if (next.join('|') === prev.homeInsightOrder.join('|')) return prev;
-      return {...prev,homeInsightOrder:next};
-    });
-  };
-
-  const startHomeInsightDrag = (id: HomeInsightId, e: React.PointerEvent<HTMLButtonElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    homeDragRef.current = {id,pointerId:e.pointerId,startY:e.clientY,active:false};
-  };
-
   const systemCats=cats.filter(c => c.system);
   const customCats=cats.filter(c => !c.system);
 
@@ -574,55 +509,6 @@ export default function App() {
           <button className="action-card income-action" onClick={() => setModal({open:true,preset:'income'})}><span className="action-icon">＋</span><span><b>{t(lang,'registerIncome')}</b><small>{t(lang,'newInput')}</small></span></button>
           <button className="action-card expense-action" onClick={() => setModal({open:true,preset:'expense'})}><span className="action-icon">−</span><span><b>{t(lang,'registerExpense')}</b><small>{t(lang,'newOutput')}</small></span></button>
         </div>
-        <section className="home-insights-section">
-          <div className="section-head">
-            <div>
-              <h2>{t(lang,'homeInsights')}</h2>
-              <div className="muted">{t(lang,'cardHint')}</div>
-            </div>
-          </div>
-          <div ref={homeTrackRef} className="home-card-stack" aria-label={t(lang,'homeInsights')}>
-            {settings.homeInsightOrder.map(id => {
-              const cardRef = (el: HTMLElement|null) => {
-                if (el) homeCardRefs.current[id]=el;
-                else delete homeCardRefs.current[id];
-              };
-              const cardStyle = {
-                opacity: draggingHomeInsight===id ? 0.68 : 1,
-                transform: draggingHomeInsight===id ? 'scale(.98)' : undefined
-              };
-              const handle = (
-                <button
-                  type="button"
-                  className="home-card-drag-handle"
-                  aria-label={t(lang,'cardHint')}
-                  title={t(lang,'cardHint')}
-                  onPointerDown={(e) => startHomeInsightDrag(id,e)}
-                  onPointerMove={moveHomeInsightFromPointer}
-                  onPointerUp={stopHomeInsightDrag}
-                  onPointerCancel={stopHomeInsightDrag}
-                  onLostPointerCapture={stopHomeInsightDrag}
-                >⋮⋮</button>
-              );
-
-              if (id==='balance') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
-                {handle}<span className="card-k">{t(lang,'balanceCard')}</span><strong className="card-amount">{fmtMoney(currentTotals.balance,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span>
-              </article>;
-
-              if (id==='monthIncome') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
-                {handle}<span className="card-k">{t(lang,'monthIncomeCard')}</span><strong className="card-amount positive">{fmtMoney(monthTotals.income,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span>
-              </article>;
-
-              if (id==='monthExpense') return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
-                {handle}<span className="card-k">{t(lang,'monthExpenseCard')}</span><strong className="card-amount negative">{fmtMoney(monthTotals.expense,settings.currency,locale)}</strong><span className="card-sub">{CURRENCY_MAP[settings.currency].names[lang]}</span>
-              </article>;
-
-              return <article ref={cardRef} style={cardStyle} className={'home-insight-card'+(draggingHomeInsight===id?' is-dragging':'')} key={id}>
-                {handle}<span className="card-k">{t(lang,'latestTransactionCard')}</span><strong className="card-text">{latest ? latest.title : '—'}</strong><span className="card-sub">{latest ? fmtMoney(latest.amount,latest.currency,locale) : t(lang,'noTransactions')}</span>
-              </article>;
-            })}
-          </div>
-        </section>
         <h2>{t(lang,'last7Days')}</h2>
         <div className="card"><div className="bars">
           {trend7.map(d => <div className="bar" key={d.date}>
@@ -635,7 +521,7 @@ export default function App() {
         {txs.length===0 ? <div className="empty">{t(lang,'noneYet')} {t(lang,'registerFirst')}</div> :
           <div className="list">{txs.slice(0,5).map(x => <div className="item" key={x.id}>
             <div><b>{x.title}</b> <span className={'badge '+(x.type==='income'?'in':'out')}>{x.type==='income'?t(lang,'income'):t(lang,'expense')}</span>
-              <div className="muted">{categoryLabel(x.category,x.category,lang)} · {displayDate(x.date,locale)} {x.time} · {CURRENCY_MAP[x.currency].names[lang]}</div>
+              <div className="muted">{categoryName(x.category)} · {displayDate(x.date,locale)} {x.time} · {CURRENCY_MAP[x.currency].names[lang]}</div>
             </div>
             <b className={x.type==='income'?'money-in':'money-out'}>{fmtMoney(x.amount,x.currency,locale)}</b>
           </div>)}</div>}
@@ -657,7 +543,7 @@ export default function App() {
         {filtered.length===0 ? <div className="empty">{t(lang,'noMatch')} {t(lang,'changeFilters')}</div> :
           <div className="list">{filtered.map(x => <div className="item" key={x.id}>
             <div style={{flex:1}}><b>{x.title}</b> <span className={'badge '+(x.type==='income'?'in':'out')}>{x.type==='income'?t(lang,'income'):t(lang,'expense')}</span>
-              <div className="muted">{categoryLabel(x.category,x.category,lang)} · {displayDate(x.date,locale)} {x.time} · {CURRENCY_MAP[x.currency].names[lang]}</div>
+              <div className="muted">{categoryName(x.category)} · {displayDate(x.date,locale)} {x.time} · {CURRENCY_MAP[x.currency].names[lang]}</div>
               {detailId===x.id && <div className="detail">{x.description || '—'}</div>}
             </div>
             <div className="row item-actions">
@@ -699,7 +585,7 @@ export default function App() {
             </div></div>
             <h3>{t(lang,'expenseDistribution')}</h3>
             <div className="card grid">{dist.map(x => <div key={x.category}>
-              <div className="row space"><span>{categoryLabel(x.category,x.category,lang)}</span><b>{fmtMoney(x.total,reportCurrency,locale)}</b></div>
+              <div className="row space"><span>{categoryName(x.category)}</span><b>{fmtMoney(x.total,reportCurrency,locale)}</b></div>
               <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
             </div>)}</div>
           </>}
@@ -788,7 +674,7 @@ export default function App() {
     </nav>
 
     {cloudAuthOpen && <CloudAuthModal lang={lang} onClose={() => setCloudAuthOpen(false)} onAuthenticated={(session) => { setCloudSession(session); setCloudAuthOpen(false); setSettings(s => ({...s,storageMode:'cloud'})); }} />}
-    {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { await persistTransaction(tx,isEdit); setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); }} />}
+    {modal.open && <TxModal lang={lang} preset={modal.preset} edit={modal.edit} cats={cats} defaultCurrency={settings.currency} onClose={() => setModal({open:false,preset:'expense'})} onSave={async (tx,isEdit) => { const ok=await persistTransaction(tx,isEdit); if(ok){ setModal({open:false,preset:'expense'}); say(t(lang,isEdit?'updated':'saved')); } }} />}
     {confirmId && <div className="modal" onClick={() => setConfirmId(null)}><div className="sheet" onClick={e => e.stopPropagation()}><h3>{t(lang,'delete')}</h3><p>{t(lang,'confirmDeleteTransaction')}</p><div className="row"><button className="btn danger" onClick={() => void removeTx(confirmId)}>{t(lang,'delete')}</button><button className="btn ghost" onClick={() => setConfirmId(null)}>{t(lang,'cancel')}</button></div></div></div>}
   </>;
 }
