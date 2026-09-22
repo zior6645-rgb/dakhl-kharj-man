@@ -30,7 +30,6 @@ export interface Category {
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type StorageMode = 'offline' | 'cloud';
 export type FontScale = 'small' | 'default' | 'large' | 'xlarge' | 'xxlarge';
-export type HomeInsightId = 'balance' | 'monthIncome' | 'monthExpense' | 'latestTransaction';
 
 export interface AppSettings {
   language: LanguageCode;
@@ -38,5 +37,4 @@ export interface AppSettings {
   theme: ThemeMode;
   storageMode: StorageMode;
   fontScale: FontScale;
-  homeInsightOrder: HomeInsightId[];
 }
