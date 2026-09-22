@@ -12,8 +12,8 @@ jobs:
     env:
       KEYSTORE_FILE: android/app/release.keystore
       KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-      KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-      KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      KEY_ALIAS: dakhlkharj
+      KEY_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
