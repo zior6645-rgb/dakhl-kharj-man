@@ -14,6 +14,9 @@ const LS_FALLBACK = 'dk-txs-fallback';
 const LS_WIPED = 'dk-txs-wiped';
 function loadSettings(): AppSettings {
   try {
+    localStorage.removeItem('dk-cloud-txs-cache');
+    localStorage.removeItem('dk-cloud-cats-cache');
+    localStorage.removeItem('cashio-cloud-session-v1');
     const raw = localStorage.getItem(LS_SETTINGS);
     if (raw) {
       const value = JSON.parse(raw);
