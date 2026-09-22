@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">dakhl-kharj-man</string>
-    <string name="title_activity_main">dakhl-kharj-man</string>
+    <string name="app_name">دخل‌وخرج من</string>
+    <string name="title_activity_main">دخل‌وخرج من</string>
     <string name="package_name">com.dakhlkharj.man</string>
     <string name="custom_url_scheme">com.dakhlkharj.man</string>
 </resources>
