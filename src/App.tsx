@@ -927,8 +927,18 @@ export default function App() {
       return false;
     }
     const lower=result.filename.toLocaleLowerCase();
-    const looksCsv=lower.endsWith('.csv') || (result.mimeType || '').toLocaleLowerCase().includes('csv');
-    const looksJson=lower.endsWith('.json') || (result.mimeType || '').toLocaleLowerCase().includes('json');
+    const nativeMime=(result.mimeType || '').toLocaleLowerCase();
+    let looksCsv=lower.endsWith('.csv') || nativeMime.includes('csv');
+    let looksJson=lower.endsWith('.json') || nativeMime.includes('json');
+    if (!looksCsv && !looksJson && (nativeMime.includes('text/plain') || nativeMime.includes('octet-stream'))) {
+      try {
+        const binary=atob(result.data);
+        const preview=decodeURIComponent(Array.from(binary.slice(0,1200),ch=>'%' + ch.charCodeAt(0).toString(16).padStart(2,'0')).join(''));
+        const trimmed=preview.replace(/^\uFEFF/,'').trimStart();
+        looksJson=trimmed.startsWith('{') || trimmed.startsWith('[');
+        looksCsv=!looksJson && /^(?:id|type|amount|title|category|تاریخ|مبلغ|نوع)/i.test(trimmed.split(/\r?\n/,1)[0] || '');
+      } catch {}
+    }
     if (!looksCsv && !looksJson) {
       say(t(lang,'invalidFileKeepData'));
       return false;
