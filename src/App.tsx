@@ -651,6 +651,16 @@ export default function App() {
     await deliverFile('dakhl-kharj.csv','\ufeff'+toCSV(rows),'text/csv;charset=utf-8','csvReady');
   }
 
+  function stableImportedCategoryId(label:string): string {
+    const normalized = label.trim().toLocaleLowerCase();
+    let hash = 2166136261;
+    for (let i = 0; i < normalized.length; i++) {
+      hash ^= normalized.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return 'cat-import-' + (hash >>> 0).toString(36);
+  }
+
   function resolveCsvCategoryId(rawId:string, rawLabel:string, existing:Category[], type:TxType): string {
     const id = rawId.trim();
     const label = rawLabel.trim();
@@ -667,7 +677,7 @@ export default function App() {
       if (match) return match.id;
     }
 
-    return id || 'cat-'+uid();
+    return id || stableImportedCategoryId(label) || 'cat-'+uid();
   }
 
   async function importFile(file:File) {
@@ -792,8 +802,19 @@ export default function App() {
             const keepCats=new Set(nextCats.filter(c=>!c.system).map(c=>c.id));
             await Promise.all(current.transactions.filter(x=>!keepTx.has(x.id)).map(x=>deleteCloudTransaction(cloudSession,x.id)));
             await Promise.all(current.categories.filter(x=>!keepCats.has(x.id)).map(x=>deleteCloudCategory(cloudSession,x.id)));
-            setCats(nextCats);
-            setTxs(sorted);
+
+            const data=await fetchCloudData(cloudSession);
+            const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c=>!DEFAULT_CATS.some(d=>d.id===c.id))];
+            const cloudTxs=data.transactions
+              .map(x => normalizeTransaction(x,mergedCats,settings.currency))
+              .filter(Boolean) as Transaction[];
+            cloudTxs.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+            setCats(mergedCats);
+            setTxs(cloudTxs);
+            try {
+              localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(cloudTxs));
+              localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats));
+            } catch {}
             say(t(lang,'restored'));
             return;
           } catch {
@@ -806,7 +827,13 @@ export default function App() {
         localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
         setCats(nextCats);
         setTxs(sorted);
-        try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
+        try {
+          await dbClear();
+          await dbBulkPut(sorted);
+        } catch {
+          say(t(lang,'localFallback'));
+          return;
+        }
         say(t(lang,'restored'));
         return;
       }
@@ -861,18 +888,33 @@ export default function App() {
       localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
       setCats(nextCats);
       setTxs(sorted);
-      try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
+      try {
+        await dbClear();
+        await dbBulkPut(sorted);
+      } catch {
+        say(t(lang,'localFallback'));
+        return;
+      }
       say(t(lang,'restored'));
     } catch {
       say(t(lang,'invalidFileKeepData'));
     }
   }
 
+  function inferImportMime(filename:string,mimeType:string): string {
+    const lower=filename.toLocaleLowerCase();
+    const reported=(mimeType || '').toLocaleLowerCase();
+    if (lower.endsWith('.csv')) return 'text/csv';
+    if (lower.endsWith('.json')) return 'application/json';
+    if (reported && reported !== 'application/octet-stream' && reported !== 'binary/octet-stream') return mimeType;
+    return lower.endsWith('.txt') ? 'text/plain' : 'application/octet-stream';
+  }
+
   function base64ToFile(data:string, filename:string, mimeType:string) {
     const binary=atob(data);
     const bytes=new Uint8Array(binary.length);
     for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-    return new File([bytes],filename,{type:mimeType});
+    return new File([bytes],filename,{type:inferImportMime(filename,mimeType)});
   }
 
   async function importNativeResult(result:NativeImportResult) {
@@ -1251,9 +1293,13 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
     setBusy(true);
     try {
       if (mode==='signup') {
-        await signUp(normalized,password);
-        setStep('verify');
-        setInfo(t(lang,'cloudOtpSent'));
+        const session=await signUp(normalized,password);
+        if (session) {
+          onAuthenticated(session);
+        } else {
+          setStep('verify');
+          setInfo(t(lang,'cloudOtpSent'));
+        }
       } else {
         const session=await signInWithPassword(normalized,password);
         onAuthenticated(session);
