@@ -121,7 +121,7 @@ assert(fileSaver.includes('drawCashCandleChart'), 'PDF includes cash-flow candle
 assert(fileSaver.includes('drawMovingAverageChart'), 'PDF includes moving-average chart');
 assert(fileSaver.includes('indicators'), 'PDF includes calculated indicators');
 assert(fileSaver.includes('protected void handleOnNewIntent'), 'FileSaver handles Android new intents');
-assert(androidBuild.includes('versionCode 14'), 'Android update code is incremented for this final release');
+assert(androidBuild.includes('versionCode 15'), 'Android update code is incremented for the responsive report fix');
 assert(app.includes('cloudAuthSetupHint'), 'Cloud setup message explains email and Supabase requirements');
 assert(app.includes('fetchCloudData(session)'), 'Cloud mode validates backend connectivity before enabling');
 
@@ -154,3 +154,12 @@ assert(i18n.includes('cloudDataNote'), 'Cloud storage note exists for the cloud 
 assert(app.includes("settings.storageMode==='cloud' ? t(lang,'cloudDataNote')"), 'Backup note matches the selected storage mode');
 
 console.log('ALL LOGIC AND SOURCE-INTEGRITY TESTS PASSED');
+
+assert(app.includes('className="report-page"'), 'report page wrapper exists');
+assert(app.includes('className="report-kpi-grid"'), 'report KPI grid uses responsive layout');
+assert(app.includes('className="report-chart-grid"'), 'report chart grid uses responsive layout');
+assert(css.includes('.report-page .report-chart-grid'), 'report chart CSS exists');
+assert(css.includes('@media (orientation:portrait)'), 'portrait orientation CSS exists');
+assert(css.includes('@media (orientation:landscape)'), 'landscape orientation CSS exists');
+assert(css.includes('.report-chart-svg'), 'report SVG sizing CSS exists');
+assert(css.includes('.report-periods'), 'report period controls wrap');
