@@ -91,6 +91,31 @@ assert(fileSaver.includes('Intent.CATEGORY_OPENABLE'), 'native saver requests a 
 assert(fileSaver.includes('startActivityForResult(call, intent, SAVE_CALLBACK)'), 'native saver returns through a Capacitor activity callback');
 assert(fileSaver.includes('@ActivityCallback'), 'native saver handles the Android activity result');
 assert(fileSaver.includes('openOutputStream(uri)'), 'native saver writes to the location selected by the user');
+assert(fileSaver.includes('ACTION_OPEN_DOCUMENT'), 'Android import opens the system file picker');
+assert(fileSaver.includes('getPendingFile'), 'Android import can consume a directly opened file');
+assert(fileSaver.includes('handleOnNewIntent'), 'Android receives file-open intents while Cashio is already running');
+assert(fileSaver.includes('notifyListeners("fileOpen"'), 'Android file-open intent is delivered to the web app');
+assert(androidManifest.includes('android.intent.action.VIEW'), 'Android manifest accepts file-open intents');
+assert(androidManifest.includes('android.intent.action.SEND'), 'Android manifest accepts shared files');
+assert(app.includes('FileSaver.pickFile'), 'Android import button uses the native file picker');
+assert(app.includes('FileSaver.getPendingFile'), 'App checks for a directly opened file on startup');
+assert(app.includes("FileSaver.addListener('fileOpen'"), 'App handles direct file-open events');
+assert(app.includes('financialIndicators'), 'report UI includes financial indicators');
+assert(app.includes('incomeExpenseLine'), 'report UI includes a line chart');
+assert(app.includes('balanceTrend'), 'report UI includes a balance trend chart');
+assert(app.includes('categoryChart'), 'report UI includes a category chart');
+assert(app.includes('savingsRate'), 'report calculations include savings rate');
+assert(app.includes('expenseRatio'), 'report calculations include expense ratio');
+assert(app.includes('FileSaver.savePdf'), 'PDF export uses native PDF saving');
+assert(fileSaver.includes('new PdfDocument'), 'PDF export creates a native Android PDF');
+assert(fileSaver.includes('drawCategoryChart'), 'PDF includes category chart');
+assert(fileSaver.includes('drawTrendChart'), 'PDF includes trend chart');
+assert(fileSaver.includes('indicators'), 'PDF includes calculated indicators');
+assert(fileSaver.includes('protected void handleOnNewIntent'), 'FileSaver handles Android new intents');
+assert(androidBuild.includes('versionCode 13'), 'Android build code is incremented for final fixes');
+assert(app.includes('cloudAuthSetupHint'), 'Cloud setup message explains email and Supabase requirements');
+assert(app.includes('fetchCloudData(session)'), 'Cloud mode validates backend connectivity before enabling');
+
 assert(app.includes('exportPdf'), 'PDF export function exists');
 assert(app.includes('FileSaver.savePdf'), 'Android PDF export uses native FileSaver');
 assert(app.includes('pdfReportTitle'), 'PDF report has a localized title');
@@ -99,8 +124,11 @@ assert(fileSaver.includes('application/pdf'), 'native PDF exporter uses PDF MIME
 assert(fileSaver.includes('new PdfDocument'), 'native PDF report is generated');
 assert(fileSaver.includes('transactions'), 'native PDF report includes transactions');
 assert(utils.includes('semicolonCount'), 'CSV parser detects semicolon-delimited files');
-assert(androidBuild.includes('versionCode 12'), 'Android build code is incremented for PDF export support');
 assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
+
+
+assert(read('src/cloud.ts').includes("type:'email'"), 'Cloud email OTP uses the current email verification type');
+assert(read('src/cloud.ts').includes("type:'signup'"), 'Cloud email verification keeps a signup fallback');
 
 console.log('ALL LOGIC AND SOURCE-INTEGRITY TESTS PASSED');

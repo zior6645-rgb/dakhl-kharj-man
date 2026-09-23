@@ -20,7 +20,18 @@ async function refreshSession(session:CloudSession):Promise<CloudSession>{const 
 export async function ensureCloudSession():Promise<CloudSession|null>{const session=loadCloudSession();if(!session)return null;if(session.expiresAt>Date.now()+60000)return session;try{return await refreshSession(session);}catch{clearCloudSession();return null;}}
 export async function signUp(email:string,password:string):Promise<void>{await authFetch('signup',{method:'POST',body:JSON.stringify({email:email.trim().toLowerCase(),password})});}
 export async function resendSignupCode(email:string):Promise<void>{await authFetch('resend',{method:'POST',body:JSON.stringify({type:'signup',email:email.trim().toLowerCase()})});}
-export async function verifySignupCode(email:string,token:string):Promise<CloudSession|null>{const payload=await authFetch('verify',{method:'POST',body:JSON.stringify({type:'signup',email:email.trim().toLowerCase(),token:token.trim()})});if(payload?.access_token)return saveCloudSession(toSession(payload));return null;}
+export async function verifySignupCode(email:string,token:string):Promise<CloudSession|null>{
+  const normalized=email.trim().toLowerCase();
+  const clean=token.trim();
+  let payload:any;
+  try {
+    payload=await authFetch('verify',{method:'POST',body:JSON.stringify({type:'email',email:normalized,token:clean})});
+  } catch {
+    payload=await authFetch('verify',{method:'POST',body:JSON.stringify({type:'signup',email:normalized,token:clean})});
+  }
+  if(payload?.access_token)return saveCloudSession(toSession(payload));
+  return null;
+}
 export async function signInWithPassword(email:string,password:string):Promise<CloudSession>{const payload=await authFetch('token?grant_type=password',{method:'POST',body:JSON.stringify({email:email.trim().toLowerCase(),password})});return saveCloudSession(toSession(payload));}
 export async function requestPasswordReset(email:string):Promise<void>{await authFetch('recover',{method:'POST',body:JSON.stringify({email:email.trim().toLowerCase()})});}
 export async function signOut():Promise<void>{const session=loadCloudSession();try{if(session)await authFetch('logout',{method:'POST',headers:{Authorization:'Bearer '+session.accessToken}});}finally{clearCloudSession();}}

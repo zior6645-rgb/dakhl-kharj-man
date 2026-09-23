@@ -22,6 +22,9 @@ type PdfReport = {
   typeLabel:string;
   categoryLabel:string;
   descriptionLabel:string;
+  indicatorsTitle:string;
+  chartsTitle:string;
+  indicators:Array<{label:string;value:string}>;
   summaries:Array<{
     currency:string;
     currencyLabel:string;
@@ -32,12 +35,24 @@ type PdfReport = {
     expenseLabel:string;
     balanceLabel:string;
   }>;
+  categoryDistribution:Array<{label:string;value:number;percent:number}>;
+  trend:Array<{date:string;income:number;expense:number;balance:number}>;
   transactions:PdfTransaction[];
+};
+
+type NativeImportResult = {
+  pending?: boolean;
+  filename?: string;
+  mimeType?: string;
+  data?: string;
 };
 
 type FileSaverPlugin = {
   saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; path:string; saved:boolean }>;
   savePdf(options: { filename:string; report:PdfReport }): Promise<{ uri:string; saved:boolean }>;
+  pickFile(options?: { mimeType?:string }): Promise<NativeImportResult>;
+  getPendingFile(): Promise<NativeImportResult>;
+  addListener(eventName:'fileOpen', listener:(result:NativeImportResult)=>void): Promise<{remove:()=>Promise<void>}>;
 };
 
 const FileSaver = registerPlugin<FileSaverPlugin>('FileSaver');
@@ -345,6 +360,64 @@ export default function App() {
     return groupByDay(reportTxs,lastNDays(monthDays,monthEnd),reportCurrency);
   }, [reportTxs,period,cFrom,cTo,reportCurrency]);
   const maxRep = Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]));
+  const reportExpenseDist = useMemo(() => [...dist].sort((a,b) => b.total-a.total), [dist]);
+  const expenseTransactions = useMemo(() => reportTxs.filter(x => x.type==='expense'), [reportTxs]);
+  const incomeTransactions = useMemo(() => reportTxs.filter(x => x.type==='income'), [reportTxs]);
+  const savingsRate = reportTotals.income > 0 ? (reportTotals.balance / reportTotals.income) * 100 : null;
+  const expenseRatio = reportTotals.income > 0 ? (reportTotals.expense / reportTotals.income) * 100 : null;
+  const averageIncome = incomeTransactions.length ? reportTotals.income / incomeTransactions.length : 0;
+  const averageExpense = expenseTransactions.length ? reportTotals.expense / expenseTransactions.length : 0;
+  const averageTransaction = reportTotals.count ? (reportTotals.income + reportTotals.expense) / reportTotals.count : 0;
+  const largestExpenseTx = expenseTransactions.reduce<Transaction | null>((max,x) => !max || x.amount > max.amount ? x : max, null);
+  const balanceSeries = useMemo(() => {
+    let balance=0;
+    return [...reportTxs]
+      .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
+      .reduce<Array<{date:string;income:number;expense:number;balance:number}>>((acc,x) => {
+        const last=acc[acc.length-1];
+        const income=x.type==='income' ? x.amount : 0;
+        const expense=x.type==='expense' ? x.amount : 0;
+        balance += income-expense;
+        if(last && last.date===x.date) {
+          last.income += income;
+          last.expense += expense;
+          last.balance = balance;
+        } else {
+          acc.push({date:x.date,income,expense,balance});
+        }
+        return acc;
+      },[]);
+  }, [reportTxs]);
+
+  const lineWidth=680;
+  const lineHeight=240;
+  const linePadX=40;
+  const linePadY=24;
+  const lineMax=Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]),...balanceSeries.map(x=>Math.abs(x.balance)));
+  const makeLinePoints=(data:Array<{income:number;expense:number}>,key:'income'|'expense') => data.map((d,i) => {
+    const x=data.length<=1 ? lineWidth/2 : linePadX + (i/(data.length-1))*(lineWidth-linePadX*2);
+    const y=lineHeight-linePadY-(d[key]/lineMax)*(lineHeight-linePadY*2);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  const incomeLinePoints=makeLinePoints(repTrend,'income');
+  const expenseLinePoints=makeLinePoints(repTrend,'expense');
+  const balanceMax=Math.max(1,...balanceSeries.map(x=>Math.abs(x.balance)));
+  const balanceLinePoints=balanceSeries.map((d,i) => {
+    const x=balanceSeries.length<=1 ? lineWidth/2 : linePadX + (i/(balanceSeries.length-1))*(lineWidth-linePadX*2);
+    const y=lineHeight/2 - (d.balance/balanceMax)*(lineHeight/2-linePadY);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  const categoryStops=(() => {
+    if(!reportExpenseDist.length) return 'transparent';
+    let cursor=0;
+    const colors=['#2f7d6a','#5a9f8b','#7eb7a7','#a5cfc2','#d0e5de','#e6f0ed'];
+    return reportExpenseDist.map((x,i) => {
+      const start=cursor;
+      cursor += x.total/Math.max(1,reportTotals.expense)*100;
+      return colors[i%colors.length]+' '+start.toFixed(2)+'% '+cursor.toFixed(2)+'%';
+    }).join(',');
+  })();
+
   const customRangeError = period === 'custom' && cFrom > cTo;
 
   function persistLocal(next:Transaction[]) {
@@ -403,6 +476,12 @@ export default function App() {
       setCloudAuthOpen(true);
       return;
     }
+    try {
+      await fetchCloudData(session);
+    } catch (e) {
+      say(e instanceof Error ? e.message : t(lang,'cloudSyncFailed'));
+      return;
+    }
     setCloudSession(session);
     setSettings(s => ({...s,storageMode:'cloud'}));
   }
@@ -425,8 +504,8 @@ export default function App() {
       const next=data.transactions.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
       setTxs(next);
       try { localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(next)); localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats)); } catch {}
-    } catch {
-      say(t(lang,'cloudSyncFailed'));
+    } catch (e) {
+      say(e instanceof Error ? e.message : t(lang,'cloudSyncFailed'));
     }
   }
 
@@ -512,7 +591,23 @@ export default function App() {
       typeLabel:t(lang,'pdfType'),
       categoryLabel:t(lang,'pdfCategory'),
       descriptionLabel:t(lang,'pdfDescription'),
+      indicatorsTitle:t(lang,'financialIndicators'),
+      chartsTitle:t(lang,'reportCharts'),
+      indicators:[
+        {label:t(lang,'savingsRate'),value:savingsRate === null ? '—' : fmtNum(savingsRate,locale,1) + '%'},
+        {label:t(lang,'expenseRatio'),value:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%'},
+        {label:t(lang,'averageIncome'),value:fmtMoney(averageIncome,reportCurrency,locale)},
+        {label:t(lang,'averageExpense'),value:fmtMoney(averageExpense,reportCurrency,locale)},
+        {label:t(lang,'largestExpense'),value:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'},
+        {label:t(lang,'averageTransaction'),value:fmtMoney(averageTransaction,reportCurrency,locale)}
+      ],
       summaries,
+      categoryDistribution:reportExpenseDist.map(x => ({
+        label:categoryName(x.category),
+        value:x.total,
+        percent:reportTotals.expense ? (x.total/reportTotals.expense)*100 : 0
+      })),
+      trend:balanceSeries.map(x => ({date:x.date,income:x.income,expense:x.expense,balance:x.balance})),
       transactions:[...txs]
         .sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))
         .map(x => ({
@@ -773,6 +868,54 @@ export default function App() {
     }
   }
 
+  function base64ToFile(data:string, filename:string, mimeType:string) {
+    const binary=atob(data);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    return new File([bytes],filename,{type:mimeType});
+  }
+
+  async function importNativeResult(result:NativeImportResult) {
+    if(!result?.data || !result.filename) return false;
+    const mime=result.mimeType || (result.filename.toLowerCase().endsWith('.csv') ? 'text/csv' : 'application/json');
+    await importFile(base64ToFile(result.data,result.filename,mime));
+    return true;
+  }
+
+  async function handleImportClick() {
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        const result=await FileSaver.pickFile({mimeType:'*/*'});
+        await importNativeResult(result);
+      } catch (e) {
+        const message=e instanceof Error ? e.message : String(e);
+        if (message && !/canceled/i.test(message)) say(message);
+      }
+      return;
+    }
+    fileRef.current?.click();
+  }
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return;
+    let active=true;
+    let handle:{remove:()=>Promise<void>}|null=null;
+    void FileSaver.addListener('fileOpen', async result => {
+      if (!active) return;
+      await importNativeResult(result);
+    }).then(v => { handle=v; });
+    void FileSaver.getPendingFile()
+      .then(async result => {
+        if (!active || !result?.pending) return;
+        await importNativeResult(result);
+      })
+      .catch(() => {});
+    return () => {
+      active=false;
+      void handle?.remove();
+    };
+  }, []);
+
   async function addCategory() {
     const label=newCat.trim();
     if (!label) { say(t(lang,'categoryNameRequired')); return; }
@@ -929,16 +1072,66 @@ export default function App() {
               <div className="card"><div className="k">{t(lang,'balance')}</div><div className="v bal">{fmtMoney(reportTotals.balance,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'transactionCount')}</div><div className="v">{fmtNum(reportTotals.count,locale)}</div></div>
             </div>
-            <h3>{t(lang,'incomeExpenseTrend')}</h3>
-            <div className="card"><div className="bars">
-              {repTrend.map(d => <div className="bar" key={d.date}>
-                <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*48)}} />
-                <div className="col expense-bar" style={{height:Math.max(3,(d.expense/maxRep)*48)}} />
-                <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
-              </div>)}
-            </div></div>
+
+            <h3>{t(lang,'financialIndicators')}</h3>
+            <div className="grid cards">
+              <div className="card"><div className="k">{t(lang,'savingsRate')}</div><div className="v">{savingsRate===null ? '—' : fmtNum(savingsRate,locale,1)+'%'}</div></div>
+              <div className="card"><div className="k">{t(lang,'expenseRatio')}</div><div className="v">{expenseRatio===null ? '—' : fmtNum(expenseRatio,locale,1)+'%'}</div></div>
+              <div className="card"><div className="k">{t(lang,'averageIncome')}</div><div className="v in">{fmtMoney(averageIncome,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'averageExpense')}</div><div className="v out">{fmtMoney(averageExpense,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'largestExpense')}</div><div className="v out">{largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'}</div></div>
+              <div className="card"><div className="k">{t(lang,'averageTransaction')}</div><div className="v">{fmtMoney(averageTransaction,reportCurrency,locale)}</div></div>
+            </div>
+
+            <h3>{t(lang,'reportCharts')}</h3>
+            <div className="grid">
+              <div className="card">
+                <h3>{t(lang,'incomeExpenseLine')}</h3>
+                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'incomeExpenseLine')} style={{width:'100%',height:'auto',overflow:'visible'}}>
+                  <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
+                  <polyline points={incomeLinePoints} fill="none" stroke="#2f7d6a" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={expenseLinePoints} fill="none" stroke="#b85b5b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                  {repTrend.length>0 && <><circle cx={incomeLinePoints.split(' ').slice(-1)[0]?.split(',')[0] || 0} cy={incomeLinePoints.split(' ').slice(-1)[0]?.split(',')[1] || 0} r="5" fill="#2f7d6a" /><circle cx={expenseLinePoints.split(' ').slice(-1)[0]?.split(',')[0] || 0} cy={expenseLinePoints.split(' ').slice(-1)[0]?.split(',')[1] || 0} r="5" fill="#b85b5b" /></>}
+                </svg>
+                <div className="row space"><span className="muted">{t(lang,'income')}</span><span className="muted">{t(lang,'expense')}</span></div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'balanceTrend')}</h3>
+                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'balanceTrend')} style={{width:'100%',height:'auto'}}>
+                  <line x1="40" y1="120" x2="640" y2="120" stroke="currentColor" opacity=".18" />
+                  <polyline points={balanceLinePoints} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="muted">{t(lang,'monthlyComparison')}</div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'categoryChart')}</h3>
+                <div style={{display:'flex',gap:18,alignItems:'center',flexWrap:'wrap'}}>
+                  <div aria-label={t(lang,'categoryChart')} style={{width:190,height:190,borderRadius:'50%',background:'conic-gradient('+categoryStops+')',position:'relative'}}>
+                    <div style={{position:'absolute',inset:42,borderRadius:'50%',background:'var(--card,#fff)'}} />
+                  </div>
+                  <div style={{flex:1,minWidth:180}}>{reportExpenseDist.slice(0,8).map((x,i)=><div className="row space" key={x.category} style={{marginBottom:6}}>
+                    <span><i style={{display:'inline-block',width:10,height:10,borderRadius:3,marginLeft:6,background:['#2f7d6a','#5a9f8b','#7eb7a7','#a5cfc2','#d0e5de','#e6f0ed'][i%6]}} />{categoryName(x.category)}</span>
+                    <b>{fmtNum(x.total/reportTotals.expense*100,locale,1)}%</b>
+                  </div>)}</div>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'incomeExpenseTrend')}</h3>
+                <div className="bars">
+                  {repTrend.map(d => <div className="bar" key={d.date}>
+                    <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*58)}} />
+                    <div className="col expense-bar" style={{height:Math.max(3,(d.expense/maxRep)*58)}} />
+                    <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
+                  </div>)}
+                </div>
+              </div>
+            </div>
+
             <h3>{t(lang,'expenseDistribution')}</h3>
-            <div className="card grid">{dist.map(x => <div key={x.category}>
+            <div className="card grid">{reportExpenseDist.map(x => <div key={x.category}>
               <div className="row space"><span>{categoryName(x.category)}</span><b>{fmtMoney(x.total,reportCurrency,locale)}</b></div>
               <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
             </div>)}</div>
@@ -971,7 +1164,10 @@ export default function App() {
               <button className="btn ghost" onClick={() => void cloudLogout()}>{t(lang,'cloudLogout')}</button>
             </div>
           </> : settings.storageMode==='cloud' ? <div className="currency-note">{t(lang,'cloudModeRequiresAccount')}</div> : null}
-          {!cloudConfigured() && <div className="currency-note">{t(lang,'cloudConfigureHint')}</div>}
+          {!cloudConfigured() && <>
+            <div className="err">{t(lang,'cloudConfigureHint')}</div>
+            <div className="currency-note">{t(lang,'cloudAuthSetupHint')}</div>
+          </>}
         </div>
 
         <div className="card" style={{marginTop:10}}>
@@ -1000,7 +1196,7 @@ export default function App() {
 
         <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'backupRestore')}</h3>
-          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={exportPdf}>{t(lang,'exportPdf')}</button><button className="btn ghost" onClick={() => fileRef.current?.click()}>{t(lang,'importFile')}</button></div>
+          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={exportPdf}>{t(lang,'exportPdf')}</button><button className="btn ghost" onClick={() => void handleImportClick()}>{t(lang,'importFile')}</button></div>
           <input ref={fileRef} type="file" accept="application/json,.json,text/csv,.csv" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
           <div className="currency-note">{t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
         </div>

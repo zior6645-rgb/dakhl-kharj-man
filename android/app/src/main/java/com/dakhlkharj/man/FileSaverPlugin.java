@@ -36,6 +36,122 @@ public class FileSaverPlugin extends Plugin {
     private static final String SAVE_PDF_CALLBACK = "handleSavePdf";
 
     @PluginMethod
+    public void pickFile(PluginCall call) {
+        final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "text/csv",
+                "text/comma-separated-values",
+                "application/vnd.ms-excel",
+                "application/json"
+        });
+        startActivityForResult(call, intent, "handlePickFile");
+    }
+
+    @ActivityCallback
+    private void handlePickFile(PluginCall call, ActivityResult result) {
+        if (result == null || result.getData() == null || result.getData().getData() == null) {
+            call.reject("File selection was canceled.");
+            return;
+        }
+        readUri(call, result.getData().getData());
+    }
+
+    @Override
+    protected void handleOnNewIntent(android.content.Intent intent) {
+        super.handleOnNewIntent(intent);
+        Uri uri = intent.getData();
+        if (uri == null && intent.getExtras() != null) {
+            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
+            if (extra instanceof Uri) uri = (Uri) extra;
+        }
+        String action = intent.getAction();
+        if (uri == null || !(Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action))) return;
+        try {
+            JSObject data = readUriToJson(uri);
+            notifyListeners("fileOpen", data, true);
+            intent.setData(null);
+            intent.removeExtra(Intent.EXTRA_STREAM);
+            intent.setAction(Intent.ACTION_MAIN);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @PluginMethod
+    public void getPendingFile(PluginCall call) {
+        final Intent intent = getActivity().getIntent();
+        if (intent == null) {
+            call.resolve(new JSObject());
+            return;
+        }
+        Uri uri = intent.getData();
+        if (uri == null && intent.getExtras() != null) {
+            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
+            if (extra instanceof Uri) uri = (Uri) extra;
+        }
+        String action = intent.getAction();
+        if (uri == null || !(Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action))) {
+            JSObject none = new JSObject();
+            none.put("pending", false);
+            call.resolve(none);
+            return;
+        }
+        readUri(call, uri);
+        intent.setData(null);
+        intent.removeExtra(Intent.EXTRA_STREAM);
+        intent.setAction(Intent.ACTION_MAIN);
+    }
+
+    private JSObject readUriToJson(Uri uri) throws Exception {
+        android.content.ContentResolver resolver = getContext().getContentResolver();
+        byte[] bytes;
+        try (java.io.InputStream input = resolver.openInputStream(uri);
+             java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
+            if (input == null) throw new IllegalStateException("Could not open the selected file.");
+            byte[] chunk = new byte[8192];
+            int n;
+            while ((n = input.read(chunk)) >= 0) buffer.write(chunk, 0, n);
+            bytes = buffer.toByteArray();
+        }
+
+        String fileName = "imported-file";
+        android.database.Cursor cursor = resolver.query(
+                uri,
+                new String[]{android.provider.OpenableColumns.DISPLAY_NAME},
+                null,
+                null,
+                null
+        );
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (index >= 0 && cursor.getString(index) != null) fileName = cursor.getString(index);
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+
+        JSObject response = new JSObject();
+        response.put("pending", true);
+        response.put("filename", fileName);
+        String mime = resolver.getType(uri);
+        response.put("mimeType", mime == null ? "application/octet-stream" : mime);
+        response.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+        return response;
+    }
+
+    private void readUri(PluginCall call, Uri uri) {
+        try {
+            call.resolve(readUriToJson(uri));
+        } catch (Exception ex) {
+            call.reject("Could not read the selected file.", ex);
+        }
+    }
+
+    @PluginMethod
     public void saveFile(PluginCall call) {
         final String fileName = call.getString("filename");
         final String mimeType = call.getString("mimeType", "application/octet-stream");
@@ -216,6 +332,47 @@ public class FileSaverPlugin extends Plugin {
             y += 28;
         }
 
+        y += 10;
+        String indicatorsTitle = report.optString("indicatorsTitle", "Financial indicators");
+        y = drawText(canvas, indicatorsTitle, sectionPaint, margin, y, contentWidth, true) + 16;
+
+        JSONArray indicators = report.optJSONArray("indicators");
+        int indicatorCount = indicators == null ? 0 : indicators.length();
+        int metricGap = 14;
+        int metricW = (contentWidth - metricGap) / 2;
+        int metricH = 92;
+        int rows = Math.max(1, (indicatorCount + 1) / 2);
+        for (int i = 0; i < indicatorCount; i++) {
+            JSONObject item = indicators.getJSONObject(i);
+            int col = i % 2;
+            int row = i / 2;
+            int x = margin + col * (metricW + metricGap);
+            int cardY = y + row * (metricH + metricGap);
+            drawMetricCard(canvas, item.optString("label",""), item.optString("value","—"), x, cardY, metricW, metricH, bodyPaint, amountPaint);
+        }
+        y += rows * (metricH + metricGap) + 10;
+
+        JSONArray categories = report.optJSONArray("categoryDistribution");
+        JSONArray trend = report.optJSONArray("trend");
+        if ((categories != null && categories.length() > 0) || (trend != null && trend.length() > 0)) {
+            if (y + 470 > pageHeight - margin) {
+                document.finishPage(page);
+                pageNumber++;
+                page = document.startPage(new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create());
+                canvas = page.getCanvas();
+                y = margin;
+            }
+            y = drawText(canvas, report.optString("chartsTitle", "Report charts"), sectionPaint, margin, y, contentWidth, true) + 18;
+            if (categories != null && categories.length() > 0) {
+                drawCategoryChart(canvas, categories, margin, y, contentWidth, 205);
+                y += 225;
+            }
+            if (trend != null && trend.length() > 0) {
+                drawTrendChart(canvas, trend, margin, y, contentWidth, 235);
+                y += 255;
+            }
+        }
+
         JSONArray transactions = report.optJSONArray("transactions");
         int total = transactions == null ? 0 : transactions.length();
         if (total == 0) {
@@ -295,6 +452,127 @@ public class FileSaverPlugin extends Plugin {
 
         document.finishPage(page);
         return document;
+    }
+
+
+    private void drawMetricCard(Canvas canvas, String label, String value, int x, int y, int width, int height, TextPaint labelPaint, TextPaint valuePaint) {
+        Paint card = new Paint(Paint.ANTI_ALIAS_FLAG);
+        card.setColor(Color.rgb(247, 250, 249));
+        card.setStyle(Paint.Style.FILL);
+        canvas.drawRoundRect(x, y, x + width, y + height, 18, 18, card);
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(2);
+        border.setColor(Color.rgb(190, 205, 201));
+        canvas.drawRoundRect(x, y, x + width, y + height, 18, 18, border);
+        drawText(canvas, label, labelPaint, x + 18, y + 14, width - 36, false);
+        drawText(canvas, value, valuePaint, x + 18, y + 46, width - 36, false);
+    }
+
+    private void drawCategoryChart(Canvas canvas, JSONArray categories, int x, int y, int width, int height) throws Exception {
+        int chartSize = Math.min(180, height - 12);
+        float cx = x + chartSize / 2f + 8;
+        float cy = y + height / 2f;
+        float left = x + chartSize + 34;
+        float top = y + 8;
+        Paint pie = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float start = -90f;
+        int[] colors = new int[]{
+                Color.rgb(47,125,106),
+                Color.rgb(90,159,139),
+                Color.rgb(126,183,167),
+                Color.rgb(165,207,194),
+                Color.rgb(208,229,222),
+                Color.rgb(120,145,163)
+        };
+        float total = 0f;
+        for (int i = 0; i < categories.length(); i++) total += (float) categories.getJSONObject(i).optDouble("value", 0);
+        if (total <= 0) return;
+        for (int i = 0; i < categories.length(); i++) {
+            JSONObject item = categories.getJSONObject(i);
+            float value = (float) item.optDouble("value", 0);
+            float sweep = value / total * 360f;
+            pie.setColor(colors[i % colors.length]);
+            canvas.drawArc(x + 8, y + 8, x + 8 + chartSize, y + 8 + chartSize, start, sweep, true, pie);
+            start += sweep;
+        }
+        Paint hole = new Paint(Paint.ANTI_ALIAS_FLAG);
+        hole.setColor(Color.WHITE);
+        canvas.drawCircle(cx, cy, chartSize * 0.30f, hole);
+
+        TextPaint legend = textPaint(19, Typeface.create("sans-serif", Typeface.NORMAL), Color.rgb(55,55,55));
+        int max = Math.min(categories.length(), 7);
+        for (int i = 0; i < max; i++) {
+            JSONObject item = categories.getJSONObject(i);
+            int yy = (int) top + i * 27;
+            Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
+            dot.setColor(colors[i % colors.length]);
+            canvas.drawCircle(left + 6, yy + 9, 6, dot);
+            String text = item.optString("label","") + "  " + String.format(java.util.Locale.US, "%.1f%%", item.optDouble("percent",0));
+            drawText(canvas, text, legend, (int) left + 20, yy, width - chartSize - 54, true);
+        }
+    }
+
+    private void drawTrendChart(Canvas canvas, JSONArray trend, int x, int y, int width, int height) throws Exception {
+        int plotLeft = x + 42;
+        int plotTop = y + 16;
+        int plotRight = x + width - 18;
+        int plotBottom = y + height - 30;
+        Paint axis = new Paint(Paint.ANTI_ALIAS_FLAG);
+        axis.setColor(Color.rgb(175,185,181));
+        axis.setStrokeWidth(2);
+        canvas.drawLine(plotLeft, plotBottom, plotRight, plotBottom, axis);
+        canvas.drawLine(plotLeft, plotTop, plotLeft, plotBottom, axis);
+
+        double max = 1;
+        double min = 0;
+        for (int i = 0; i < trend.length(); i++) {
+            JSONObject item = trend.getJSONObject(i);
+            max = Math.max(max, item.optDouble("income",0));
+            max = Math.max(max, item.optDouble("expense",0));
+            max = Math.max(max, Math.abs(item.optDouble("balance",0)));
+            min = Math.min(min, item.optDouble("balance",0));
+        }
+        double span = Math.max(1, max - min);
+
+        Paint income = new Paint(Paint.ANTI_ALIAS_FLAG);
+        income.setColor(Color.rgb(47,125,106));
+        income.setStyle(Paint.Style.STROKE);
+        income.setStrokeWidth(4);
+        Paint expense = new Paint(Paint.ANTI_ALIAS_FLAG);
+        expense.setColor(Color.rgb(184,91,91));
+        expense.setStyle(Paint.Style.STROKE);
+        expense.setStrokeWidth(4);
+        Paint balance = new Paint(Paint.ANTI_ALIAS_FLAG);
+        balance.setColor(Color.rgb(88,111,174));
+        balance.setStyle(Paint.Style.STROKE);
+        balance.setStrokeWidth(4);
+
+        android.graphics.Path incomePath = new android.graphics.Path();
+        android.graphics.Path expensePath = new android.graphics.Path();
+        android.graphics.Path balancePath = new android.graphics.Path();
+
+        for (int i = 0; i < trend.length(); i++) {
+            JSONObject item = trend.getJSONObject(i);
+            float px = trend.length() <= 1 ? (plotLeft + plotRight) / 2f :
+                    plotLeft + (i / (float)(trend.length()-1)) * (plotRight - plotLeft);
+            float iy = (float)(plotBottom - ((item.optDouble("income",0)-min)/span) * (plotBottom-plotTop));
+            float ey = (float)(plotBottom - ((item.optDouble("expense",0)-min)/span) * (plotBottom-plotTop));
+            float by = (float)(plotBottom - ((item.optDouble("balance",0)-min)/span) * (plotBottom-plotTop));
+            if (i == 0) {
+                incomePath.moveTo(px, iy);
+                expensePath.moveTo(px, ey);
+                balancePath.moveTo(px, by);
+            } else {
+                incomePath.lineTo(px, iy);
+                expensePath.lineTo(px, ey);
+                balancePath.lineTo(px, by);
+            }
+        }
+
+        canvas.drawPath(incomePath, income);
+        canvas.drawPath(expensePath, expense);
+        canvas.drawPath(balancePath, balance);
     }
 
     private TextPaint textPaint(float size, Typeface typeface, int color) {
