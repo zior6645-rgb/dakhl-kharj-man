@@ -135,3 +135,56 @@ export function lastNMonths(n:number, base=new Date()):string[] {
   }
   return out;
 }
+
+
+export type CashCandle = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+export function buildCashCandles(list: Transaction[], days: string[], currency?: CurrencyCode): CashCandle[] {
+  const filtered = list
+    .filter(t => (!currency || t.currency === currency) && days.includes(t.date))
+    .sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+  const byDay = new Map<string, Transaction[]>();
+  for (const day of days) byDay.set(day, []);
+  for (const tx of filtered) byDay.get(tx.date)?.push(tx);
+
+  let balance = 0;
+  const out: CashCandle[] = [];
+  for (const day of days) {
+    const open = balance;
+    let high = balance;
+    let low = balance;
+    for (const tx of byDay.get(day) ?? []) {
+      balance += tx.type === 'income' ? tx.amount : -tx.amount;
+      high = Math.max(high, balance);
+      low = Math.min(low, balance);
+    }
+    out.push({date:day, open, high, low, close:balance});
+  }
+  return out;
+}
+
+export function movingAverage(values: number[], window = 7): number[] {
+  if (!values.length) return [];
+  const size = Math.max(1, Math.min(window, values.length));
+  const out: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= size) sum -= values[i-size];
+    out.push(sum / Math.min(i + 1, size));
+  }
+  return out;
+}
+
+export function standardDeviation(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((s,x)=>s+x,0) / values.length;
+  const variance = values.reduce((s,x)=>s + (x-mean)*(x-mean),0) / values.length;
+  return Math.sqrt(Math.max(0,variance));
+}
