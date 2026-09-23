@@ -37,6 +37,7 @@ type PdfReport = {
   }>;
   categoryDistribution:Array<{label:string;value:number;percent:number}>;
   trend:Array<{date:string;income:number;expense:number;balance:number}>;
+  candles:Array<{date:string;open:number;high:number;low:number;close:number}>;
   transactions:PdfTransaction[];
 };
 
@@ -389,6 +390,28 @@ export default function App() {
       },[]);
   }, [reportTxs]);
 
+  const cashflowCandles = useMemo(() => {
+    let running=0;
+    const ordered=[...reportTxs].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+    const out:Array<{date:string;open:number;high:number;low:number;close:number}>=[];
+    for (const tx of ordered) {
+      const last=out[out.length-1];
+      if (!last || last.date !== tx.date) {
+        const open=running;
+        const close=open + (tx.type==='income' ? tx.amount : -tx.amount);
+        out.push({date:tx.date,open,high:Math.max(open,close),low:Math.min(open,close),close});
+        running=close;
+      } else {
+        const next=running + (tx.type==='income' ? tx.amount : -tx.amount);
+        last.high=Math.max(last.high,next);
+        last.low=Math.min(last.low,next);
+        last.close=next;
+        running=next;
+      }
+    }
+    return out;
+  }, [reportTxs]);
+
   const lineWidth=680;
   const lineHeight=240;
   const linePadX=40;
@@ -407,6 +430,11 @@ export default function App() {
     const y=lineHeight/2 - (d.balance/balanceMax)*(lineHeight/2-linePadY);
     return x.toFixed(1)+','+y.toFixed(1);
   }).join(' ');
+  const candleMin=Math.min(0,...cashflowCandles.map(x=>x.low));
+  const candleMax=Math.max(0,...cashflowCandles.map(x=>x.high));
+  const candleSpan=Math.max(1,candleMax-candleMin);
+  const candleY=(value:number) => lineHeight-linePadY-((value-candleMin)/candleSpan)*(lineHeight-linePadY*2);
+  const candleStep=cashflowCandles.length<=1 ? lineWidth-80 : (lineWidth-linePadX*2)/cashflowCandles.length;
   const categoryStops=(() => {
     if(!reportExpenseDist.length) return 'transparent';
     let cursor=0;
@@ -608,6 +636,7 @@ export default function App() {
         percent:reportTotals.expense ? (x.total/reportTotals.expense)*100 : 0
       })),
       trend:balanceSeries.map(x => ({date:x.date,income:x.income,expense:x.expense,balance:x.balance})),
+      candles:cashflowCandles,
       transactions:[...txs]
         .sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))
         .map(x => ({
@@ -651,6 +680,16 @@ export default function App() {
     await deliverFile('dakhl-kharj.csv','\ufeff'+toCSV(rows),'text/csv;charset=utf-8','csvReady');
   }
 
+  function stableImportedCategoryId(label:string): string {
+    const normalized = label.trim().toLocaleLowerCase();
+    let hash = 2166136261;
+    for (let i = 0; i < normalized.length; i++) {
+      hash ^= normalized.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return 'cat-import-' + (hash >>> 0).toString(36);
+  }
+
   function resolveCsvCategoryId(rawId:string, rawLabel:string, existing:Category[], type:TxType): string {
     const id = rawId.trim();
     const label = rawLabel.trim();
@@ -667,7 +706,7 @@ export default function App() {
       if (match) return match.id;
     }
 
-    return id || 'cat-'+uid();
+    return id || stableImportedCategoryId(label) || 'cat-'+uid();
   }
 
   async function importFile(file:File) {
@@ -792,8 +831,19 @@ export default function App() {
             const keepCats=new Set(nextCats.filter(c=>!c.system).map(c=>c.id));
             await Promise.all(current.transactions.filter(x=>!keepTx.has(x.id)).map(x=>deleteCloudTransaction(cloudSession,x.id)));
             await Promise.all(current.categories.filter(x=>!keepCats.has(x.id)).map(x=>deleteCloudCategory(cloudSession,x.id)));
-            setCats(nextCats);
-            setTxs(sorted);
+
+            const data=await fetchCloudData(cloudSession);
+            const mergedCats=[...DEFAULT_CATS,...data.categories.filter(c=>!DEFAULT_CATS.some(d=>d.id===c.id))];
+            const cloudTxs=data.transactions
+              .map(x => normalizeTransaction(x,mergedCats,settings.currency))
+              .filter(Boolean) as Transaction[];
+            cloudTxs.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+            setCats(mergedCats);
+            setTxs(cloudTxs);
+            try {
+              localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(cloudTxs));
+              localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats));
+            } catch {}
             say(t(lang,'restored'));
             return;
           } catch {
@@ -806,7 +856,13 @@ export default function App() {
         localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
         setCats(nextCats);
         setTxs(sorted);
-        try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
+        try {
+          await dbClear();
+          await dbBulkPut(sorted);
+        } catch {
+          say(t(lang,'localFallback'));
+          return;
+        }
         say(t(lang,'restored'));
         return;
       }
@@ -861,18 +917,33 @@ export default function App() {
       localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
       setCats(nextCats);
       setTxs(sorted);
-      try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
+      try {
+        await dbClear();
+        await dbBulkPut(sorted);
+      } catch {
+        say(t(lang,'localFallback'));
+        return;
+      }
       say(t(lang,'restored'));
     } catch {
       say(t(lang,'invalidFileKeepData'));
     }
   }
 
+  function inferImportMime(filename:string,mimeType:string): string {
+    const lower=filename.toLocaleLowerCase();
+    const reported=(mimeType || '').toLocaleLowerCase();
+    if (lower.endsWith('.csv')) return 'text/csv';
+    if (lower.endsWith('.json')) return 'application/json';
+    if (reported && reported !== 'application/octet-stream' && reported !== 'binary/octet-stream') return mimeType;
+    return lower.endsWith('.txt') ? 'text/plain' : 'application/octet-stream';
+  }
+
   function base64ToFile(data:string, filename:string, mimeType:string) {
     const binary=atob(data);
     const bytes=new Uint8Array(binary.length);
     for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-    return new File([bytes],filename,{type:mimeType});
+    return new File([bytes],filename,{type:inferImportMime(filename,mimeType)});
   }
 
   async function importNativeResult(result:NativeImportResult) {
@@ -1106,6 +1177,25 @@ export default function App() {
               </div>
 
               <div className="card">
+                <h3>{t(lang,'cashflowCandle')}</h3>
+                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'cashflowCandle')} style={{width:'100%',height:'auto',overflow:'visible'}}>
+                  <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
+                  {cashflowCandles.map((c,i) => {
+                    const x=cashflowCandles.length<=1 ? lineWidth/2 : linePadX + i*candleStep + candleStep/2;
+                    const openY=candleY(c.open), closeY=candleY(c.close), highY=candleY(c.high), lowY=candleY(c.low);
+                    const up=c.close>=c.open;
+                    const bodyY=Math.min(openY,closeY);
+                    const bodyH=Math.max(3,Math.abs(closeY-openY));
+                    return <g key={c.date}>
+                      <line x1={x} y1={highY} x2={x} y2={lowY} stroke={up?'#2f7d6a':'#b85b5b'} strokeWidth="3" />
+                      <rect x={x-Math.max(5,candleStep*0.22)} y={bodyY} width={Math.max(10,candleStep*0.44)} height={bodyH} fill={up?'#2f7d6a':'#b85b5b'} opacity=".88" rx="2" />
+                    </g>;
+                  })}
+                </svg>
+                <div className="muted">{t(lang,'cashflowCandleNote')}</div>
+              </div>
+
+              <div className="card">
                 <h3>{t(lang,'categoryChart')}</h3>
                 <div style={{display:'flex',gap:18,alignItems:'center',flexWrap:'wrap'}}>
                   <div aria-label={t(lang,'categoryChart')} style={{width:190,height:190,borderRadius:'50%',background:'conic-gradient('+categoryStops+')',position:'relative'}}>
@@ -1251,9 +1341,13 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
     setBusy(true);
     try {
       if (mode==='signup') {
-        await signUp(normalized,password);
-        setStep('verify');
-        setInfo(t(lang,'cloudOtpSent'));
+        const session=await signUp(normalized,password);
+        if (session) {
+          onAuthenticated(session);
+        } else {
+          setStep('verify');
+          setInfo(t(lang,'cloudOtpSent'));
+        }
       } else {
         const session=await signInWithPassword(normalized,password);
         onAuthenticated(session);
