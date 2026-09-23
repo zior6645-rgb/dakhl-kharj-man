@@ -1060,16 +1060,66 @@ export default function App() {
               <div className="card"><div className="k">{t(lang,'balance')}</div><div className="v bal">{fmtMoney(reportTotals.balance,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'transactionCount')}</div><div className="v">{fmtNum(reportTotals.count,locale)}</div></div>
             </div>
-            <h3>{t(lang,'incomeExpenseTrend')}</h3>
-            <div className="card"><div className="bars">
-              {repTrend.map(d => <div className="bar" key={d.date}>
-                <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*48)}} />
-                <div className="col expense-bar" style={{height:Math.max(3,(d.expense/maxRep)*48)}} />
-                <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
-              </div>)}
-            </div></div>
+
+            <h3>{t(lang,'financialIndicators')}</h3>
+            <div className="grid cards">
+              <div className="card"><div className="k">{t(lang,'savingsRate')}</div><div className="v">{savingsRate===null ? '—' : fmtNum(savingsRate,locale,1)+'%'}</div></div>
+              <div className="card"><div className="k">{t(lang,'expenseRatio')}</div><div className="v">{expenseRatio===null ? '—' : fmtNum(expenseRatio,locale,1)+'%'}</div></div>
+              <div className="card"><div className="k">{t(lang,'averageIncome')}</div><div className="v in">{fmtMoney(averageIncome,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'averageExpense')}</div><div className="v out">{fmtMoney(averageExpense,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'largestExpense')}</div><div className="v out">{largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'}</div></div>
+              <div className="card"><div className="k">{t(lang,'averageTransaction')}</div><div className="v">{fmtMoney(averageTransaction,reportCurrency,locale)}</div></div>
+            </div>
+
+            <h3>{t(lang,'reportCharts')}</h3>
+            <div className="grid">
+              <div className="card">
+                <h3>{t(lang,'incomeExpenseLine')}</h3>
+                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'incomeExpenseLine')} style={{width:'100%',height:'auto',overflow:'visible'}}>
+                  <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
+                  <polyline points={incomeLinePoints} fill="none" stroke="#2f7d6a" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={expenseLinePoints} fill="none" stroke="#b85b5b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                  {repTrend.length>0 && <><circle cx={incomeLinePoints.split(' ').slice(-1)[0]?.split(',')[0] || 0} cy={incomeLinePoints.split(' ').slice(-1)[0]?.split(',')[1] || 0} r="5" fill="#2f7d6a" /><circle cx={expenseLinePoints.split(' ').slice(-1)[0]?.split(',')[0] || 0} cy={expenseLinePoints.split(' ').slice(-1)[0]?.split(',')[1] || 0} r="5" fill="#b85b5b" /></>}
+                </svg>
+                <div className="row space"><span className="muted">{t(lang,'income')}</span><span className="muted">{t(lang,'expense')}</span></div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'balanceTrend')}</h3>
+                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'balanceTrend')} style={{width:'100%',height:'auto'}}>
+                  <line x1="40" y1="120" x2="640" y2="120" stroke="currentColor" opacity=".18" />
+                  <polyline points={balanceLinePoints} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="muted">{t(lang,'monthlyComparison')}</div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'categoryChart')}</h3>
+                <div style={{display:'flex',gap:18,alignItems:'center',flexWrap:'wrap'}}>
+                  <div aria-label={t(lang,'categoryChart')} style={{width:190,height:190,borderRadius:'50%',background:'conic-gradient('+categoryStops+')',position:'relative'}}>
+                    <div style={{position:'absolute',inset:42,borderRadius:'50%',background:'var(--card,#fff)'}} />
+                  </div>
+                  <div style={{flex:1,minWidth:180}}>{reportExpenseDist.slice(0,8).map((x,i)=><div className="row space" key={x.category} style={{marginBottom:6}}>
+                    <span><i style={{display:'inline-block',width:10,height:10,borderRadius:3,marginLeft:6,background:['#2f7d6a','#5a9f8b','#7eb7a7','#a5cfc2','#d0e5de','#e6f0ed'][i%6]}} />{categoryName(x.category)}</span>
+                    <b>{fmtNum(x.total/reportTotals.expense*100,locale,1)}%</b>
+                  </div>)}</div>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'incomeExpenseTrend')}</h3>
+                <div className="bars">
+                  {repTrend.map(d => <div className="bar" key={d.date}>
+                    <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*58)}} />
+                    <div className="col expense-bar" style={{height:Math.max(3,(d.expense/maxRep)*58)}} />
+                    <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
+                  </div>)}
+                </div>
+              </div>
+            </div>
+
             <h3>{t(lang,'expenseDistribution')}</h3>
-            <div className="card grid">{dist.map(x => <div key={x.category}>
+            <div className="card grid">{reportExpenseDist.map(x => <div key={x.category}>
               <div className="row space"><span>{categoryName(x.category)}</span><b>{fmtMoney(x.total,reportCurrency,locale)}</b></div>
               <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
             </div>)}</div>
