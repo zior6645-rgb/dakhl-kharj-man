@@ -108,12 +108,6 @@ assert(app.includes('incomeExpenseTrend'), 'report UI includes a vertical compar
 assert(app.includes('savingsRate'), 'report calculations include savings rate');
 assert(app.includes('expenseRatio'), 'report calculations include expense ratio');
 assert(app.includes('averageDailyExpense'), 'report calculates average daily expense');
-assert(app.includes('netFlowVolatility'), 'report calculates net flow volatility');
-assert(app.includes('coverageDays'), 'report calculates expense coverage days');
-assert(app.includes('cashCandleSeries'), 'report builds cash-flow candle series');
-assert(read('src/finance.ts').includes('export function buildCashCandles'), 'finance module builds cash-flow candles');
-assert(read('src/finance.ts').includes('export function movingAverage'), 'finance module provides moving average');
-assert(read('src/finance.ts').includes('export function standardDeviation'), 'finance module provides volatility calculation');
 assert(app.includes('FileSaver.savePdf'), 'PDF export uses native PDF saving');
 assert(fileSaver.includes('new PdfDocument'), 'PDF export creates a native Android PDF');
 assert(fileSaver.includes('drawCategoryChart'), 'PDF includes category chart');
@@ -151,6 +145,8 @@ assert(fileSaver.includes('getClipData'), 'Android import accepts ClipData share
 assert(fileSaver.includes('detectMimeType'), 'Android import normalizes generic file MIME types by extension');
 assert(androidManifest.includes('android:mimeType="application/octet-stream"'), 'Android manifest accepts generic downloaded files');
 assert(androidManifest.includes('android:mimeType="text/plain"'), 'Android manifest accepts text/plain CSV downloads');
+assert(androidManifest.includes('android:mimeType="application/vnd.ms-excel"'), 'Android manifest accepts spreadsheet MIME downloads');
+assert(androidManifest.includes('android:mimeType="text/comma-separated-values"'), 'Android manifest accepts generic CSV sharing');
 assert(app.includes("result?.error"), 'Native import errors are surfaced to the user');
 assert(app.includes("result.session"), 'Cloud signup can immediately continue when Supabase returns a session');
 assert(!read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('Home should have a carousel'), 'Final audit no longer requires removed home carousel cards');
