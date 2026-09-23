@@ -29,8 +29,6 @@ type PdfReport = {
   descriptionLabel:string;
   indicatorsTitle:string;
   chartsTitle:string;
-  cashCandleTitle:string;
-  movingAverageTitle:string;
   indicators:Array<{label:string;value:string}>;
   summaries:Array<{
     currency:string;
@@ -44,8 +42,6 @@ type PdfReport = {
   }>;
   categoryDistribution:Array<{label:string;value:number;percent:number}>;
   trend:Array<{date:string;income:number;expense:number;balance:number}>;
-  cashCandles:Array<{date:string;open:number;high:number;low:number;close:number}>;
-  movingAverage:Array<{date:string;income:number;expense:number;net:number}>;
   transactions:PdfTransaction[];
 };
 
@@ -58,7 +54,7 @@ type NativeImportResult = {
 };
 
 type FileSaverPlugin = {
-  saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; path:string; saved:boolean }>;
+  saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; saved:boolean }>;
   savePdf(options: { filename:string; report:PdfReport }): Promise<{ uri:string; saved:boolean }>;
   pickFile(options?: { mimeType?:string }): Promise<NativeImportResult>;
   getPendingFile(): Promise<NativeImportResult>;
@@ -70,7 +66,7 @@ import type { AppSettings, Category, CurrencyCode, FontScale, LanguageCode, Stor
 import { DEFAULT_CATS, normalizeCategoryId } from './categories';
 import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
-import { buildCashCandles, calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, movingAverage, standardDeviation, validateBackup, validateTx } from './finance';
+import { calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
 import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, parseCSV, timeStr, todayStr, toCSV, uid } from './utils';
 import { cloudConfigured, ensureCloudSession, fetchCloudData, loadCloudSession, requestPasswordReset, resendSignupCode, signInWithPassword, signOut, signUp, upsertCloudCategory, upsertCloudTransaction, deleteCloudCategory, deleteCloudTransaction, deleteAllCloudData, uploadLocalCategories, uploadLocalTransactions, verifySignupCode, type CloudSession } from './cloud';
@@ -383,19 +379,6 @@ export default function App() {
   const reportEnd = new Date(pr.to + 'T12:00:00');
   const reportCalendarDays = Math.max(1, Math.round((reportEnd.getTime()-reportStart.getTime())/86400000)+1);
   const averageDailyExpense = reportTotals.expense / reportCalendarDays;
-  const incomeCoverage = reportTotals.expense > 0 ? (reportTotals.income / reportTotals.expense) * 100 : null;
-  const topExpenseShare = reportTotals.expense > 0 && reportExpenseDist[0] ? (reportExpenseDist[0].total / reportTotals.expense) * 100 : null;
-  const dailyNetSeries = repTrend.map(x => x.income - x.expense);
-  const netFlowVolatility = standardDeviation(dailyNetSeries);
-  const currentBalanceForReport = calcTotals(txs,reportCurrency).balance;
-  const coverageDays = averageDailyExpense > 0 && currentBalanceForReport > 0 ? currentBalanceForReport / averageDailyExpense : null;
-  const incomeMovingAverage = movingAverage(repTrend.map(x=>x.income),7);
-  const expenseMovingAverage = movingAverage(repTrend.map(x=>x.expense),7);
-  const netMovingAverage = movingAverage(dailyNetSeries,7);
-  const movingAverageSeries = repTrend.map((x,i)=>({date:x.date,income:incomeMovingAverage[i] ?? 0,expense:expenseMovingAverage[i] ?? 0,net:netMovingAverage[i] ?? 0}));
-  const rawCashCandles = buildCashCandles(reportTxs,lastNDays(reportCalendarDays,reportEnd),reportCurrency);
-  const candleStep = rawCashCandles.length > 60 ? Math.ceil(rawCashCandles.length/60) : 1;
-  const cashCandleSeries = rawCashCandles.filter((_,i)=>i % candleStep === 0 || i === rawCashCandles.length-1);
   const balanceSeries = useMemo(() => {
     let balance=0;
     return [...reportTxs]
@@ -561,7 +544,7 @@ export default function App() {
           mimeType:mime,
           data:utf8ToBase64(content)
         });
-        if (!result?.path) throw new Error('Android did not return a saved file path.');
+        if (!result?.saved) throw new Error('Android did not confirm that the file was saved.');
         say(t(lang,successKey));
       } catch {
         say(t(lang,'fileExportFailed'));
@@ -620,8 +603,6 @@ export default function App() {
       descriptionLabel:t(lang,'pdfDescription'),
       indicatorsTitle:t(lang,'financialIndicators'),
       chartsTitle:t(lang,'reportCharts'),
-      cashCandleTitle:t(lang,'cashflowCandles'),
-      movingAverageTitle:t(lang,'cashflowMovingAverage'),
       indicators:[
         {label:t(lang,'savingsRate'),value:savingsRate === null ? '—' : fmtNum(savingsRate,locale,1) + '%'},
         {label:t(lang,'expenseRatio'),value:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%'},
@@ -630,11 +611,6 @@ export default function App() {
         {label:t(lang,'largestExpense'),value:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'},
         {label:t(lang,'averageTransaction'),value:fmtMoney(averageTransaction,reportCurrency,locale)},
         {label:t(lang,'averageDailyExpense'),value:fmtMoney(averageDailyExpense,reportCurrency,locale)},
-        {label:t(lang,'incomeCoverage'),value:incomeCoverage === null ? '—' : fmtNum(incomeCoverage,locale,1) + '%'},
-        {label:t(lang,'topExpenseShare'),value:topExpenseShare === null ? '—' : fmtNum(topExpenseShare,locale,1) + '%'},
-        {label:t(lang,'netFlowVolatility'),value:fmtMoney(netFlowVolatility,reportCurrency,locale)},
-        {label:t(lang,'coverageDays'),value:coverageDays === null ? '—' : fmtNum(coverageDays,locale,1) + ' ' + t(lang,'days')},
-        {label:t(lang,'expenseMovingAverage'),value:expenseMovingAverage.length ? fmtMoney(expenseMovingAverage[expenseMovingAverage.length-1],reportCurrency,locale) : '—'}
       ],
       summaries,
       categoryDistribution:reportExpenseDist.map(x => ({
@@ -643,8 +619,6 @@ export default function App() {
         percent:reportTotals.expense ? (x.total/reportTotals.expense)*100 : 0
       })),
       trend:balanceSeries.map(x => ({date:x.date,income:x.income,expense:x.expense,balance:x.balance})),
-      cashCandles:cashCandleSeries,
-      movingAverage:movingAverageSeries,
       transactions:[...txs]
         .sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))
         .map(x => ({
@@ -768,7 +742,7 @@ export default function App() {
           const type:TxType | null = row.type === 'income' || row.type === 'expense'
             ? row.type
             : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : null);
-          if (!type) return null;
+          if (!type) { say(t(lang,'invalidFileKeepData')); return; }
           const id=resolveCsvCategoryId(row.categoryId,row.category,existingCats,type);
           if (!existingCats.some(c => c.id === id)) {
             const spec=categorySpecs.get(id) ?? {id,label:row.category.trim(),types:new Set<TxType>()};
@@ -1149,10 +1123,7 @@ export default function App() {
               <div className="card"><div className="k">{t(lang,'largestExpense')}</div><div className="v out">{largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'}</div></div>
               <div className="card"><div className="k">{t(lang,'averageTransaction')}</div><div className="v">{fmtMoney(averageTransaction,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'averageDailyExpense')}</div><div className="v out">{fmtMoney(averageDailyExpense,reportCurrency,locale)}</div></div>
-              <div className="card"><div className="k">{t(lang,'incomeCoverage')}</div><div className="v">{incomeCoverage===null ? '—' : fmtNum(incomeCoverage,locale,1)+'%'}</div></div>
-              <div className="card"><div className="k">{t(lang,'topExpenseShare')}</div><div className="v">{topExpenseShare===null ? '—' : fmtNum(topExpenseShare,locale,1)+'%'}</div></div>
-              <div className="card"><div className="k">{t(lang,'netFlowVolatility')}</div><div className="v">{fmtMoney(netFlowVolatility,reportCurrency,locale)}</div></div>
-              <div className="card"><div className="k">{t(lang,'coverageDays')}</div><div className="v">{coverageDays===null ? '—' : fmtNum(coverageDays,locale,1)+' '+t(lang,'days')}</div></div>
+
             </div>
 
             <h3>{t(lang,'reportCharts')}</h3>
@@ -1199,34 +1170,6 @@ export default function App() {
                     <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
                   </div>)}
                 </div>
-              </div>
-            </div>
-
-            <div className="report-chart-grid">
-              <div className="card report-chart-card">
-                <h3>{t(lang,'cashflowMovingAverage')}</h3>
-                <svg className="report-chart-svg" viewBox="0 0 680 240" role="img" aria-label={t(lang,'cashflowMovingAverage')} style={{width:'100%',height:'auto'}}>
-                  <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
-                  <polyline points={makeLinePoints(movingAverageSeries.map(x=>({income:x.income,expense:x.expense})),'income')} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                  <polyline points={makeLinePoints(movingAverageSeries.map(x=>({income:x.income,expense:x.expense})),'expense')} fill="none" stroke="#b85b5b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <div className="muted">{t(lang,'movingAverage7Day')}</div>
-              </div>
-              <div className="card report-chart-card">
-                <h3>{t(lang,'cashflowCandles')}</h3>
-                <svg className="report-chart-svg" viewBox="0 0 680 250" role="img" aria-label={t(lang,'cashflowCandles')} style={{width:'100%',height:'auto'}}>
-                  <line x1="40" y1="220" x2="640" y2="220" stroke="currentColor" opacity=".18" />
-                  {cashCandleSeries.map((d,i)=>{
-                    const max=Math.max(1,...cashCandleSeries.map(x=>Math.abs(x.high)),...cashCandleSeries.map(x=>Math.abs(x.low)));
-                    const x=cashCandleSeries.length<=1?340:45+(i/(cashCandleSeries.length-1))*590;
-                    const sy=(v:number)=>125-(v/max)*95;
-                    const openY=sy(d.open), closeY=sy(d.close), highY=sy(d.high), lowY=sy(d.low);
-                    const bodyY=Math.min(openY,closeY), bodyH=Math.max(2,Math.abs(closeY-openY));
-                    const rising=d.close>=d.open;
-                    return <g key={d.date}><line x1={x} y1={highY} x2={x} y2={lowY} stroke="#586fae" strokeWidth="2"/><rect x={x-5} y={bodyY} width="10" height={bodyH} rx="2" fill={rising?'#2f7d6a':'#b85b5b'} /></g>;
-                  })}
-                </svg>
-                <div className="muted">{t(lang,'cashflowCandleNote')}</div>
               </div>
             </div>
 
