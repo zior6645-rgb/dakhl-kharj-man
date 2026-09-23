@@ -107,6 +107,8 @@ assert(app.includes("FileSaver.addListener('fileOpen'"), 'App handles direct fil
 assert(app.includes('financialIndicators'), 'report UI includes financial indicators');
 assert(app.includes('incomeExpenseLine'), 'report UI includes a line chart');
 assert(app.includes('balanceTrend'), 'report UI includes a balance trend chart');
+assert(app.includes('cashflowCandles'), 'report calculations include cash-flow candles');
+assert(app.includes('cashflowCandle'), 'report UI includes cash-flow candle chart');
 assert(app.includes('categoryChart'), 'report UI includes a category chart');
 assert(app.includes('savingsRate'), 'report calculations include savings rate');
 assert(app.includes('expenseRatio'), 'report calculations include expense ratio');
@@ -114,6 +116,8 @@ assert(app.includes('FileSaver.savePdf'), 'PDF export uses native PDF saving');
 assert(fileSaver.includes('new PdfDocument'), 'PDF export creates a native Android PDF');
 assert(fileSaver.includes('drawCategoryChart'), 'PDF includes category chart');
 assert(fileSaver.includes('drawTrendChart'), 'PDF includes trend chart');
+assert(fileSaver.includes('drawCandleChart'), 'PDF includes cash-flow candle chart');
+assert(fileSaver.includes('JSONArray candles'), 'PDF receives candle data');
 assert(fileSaver.includes('indicators'), 'PDF includes calculated indicators');
 assert(fileSaver.includes('protected void handleOnNewIntent'), 'FileSaver handles Android new intents');
 assert(androidBuild.includes('versionCode 14'), 'Android build code is incremented for final fixes');
