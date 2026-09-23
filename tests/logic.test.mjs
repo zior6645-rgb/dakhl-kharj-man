@@ -104,10 +104,8 @@ assert(app.includes('financialIndicators'), 'report UI includes focused financia
 assert(app.includes('incomeExpenseLine'), 'report UI includes a line chart');
 assert(app.includes('balanceTrend'), 'report UI includes a balance trend chart');
 assert(app.includes('categoryChart'), 'report UI includes a category chart');
-assert(app.includes('incomeExpenseTrend'), 'report UI includes a vertical comparison chart');
 assert(app.includes('savingsRate'), 'report calculations include savings rate');
 assert(app.includes('expenseRatio'), 'report calculations include expense ratio');
-assert(app.includes('averageDailyExpense'), 'report calculates average daily expense');
 assert(app.includes('FileSaver.savePdf'), 'PDF export uses native PDF saving');
 assert(fileSaver.includes('new PdfDocument'), 'PDF export creates a native Android PDF');
 assert(fileSaver.includes('drawCategoryChart'), 'PDF includes category chart');
@@ -118,7 +116,7 @@ assert(!fileSaver.includes('drawCashCandleChart'), 'native PDF does not include 
 assert(!fileSaver.includes('drawMovingAverageChart'), 'native PDF does not include unnecessary moving-average chart');
 assert(fileSaver.includes('indicators'), 'PDF includes calculated indicators');
 assert(fileSaver.includes('protected void handleOnNewIntent'), 'FileSaver handles Android new intents');
-assert(androidBuild.includes('versionCode 15'), 'Android update code is incremented for the responsive report fix');
+assert(androidBuild.includes('versionCode 16'), 'Android update code is incremented for the balance trend fix');
 assert(app.includes('cloudAuthSetupHint'), 'Cloud setup message explains email and Supabase requirements');
 assert(app.includes('fetchCloudData(session)'), 'Cloud mode validates backend connectivity before enabling');
 

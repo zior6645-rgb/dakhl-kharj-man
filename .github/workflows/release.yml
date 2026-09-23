@@ -60,6 +60,11 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null || true
           "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Cloud configuration check
+        shell: bash
+        run: |
+          if [ -n "$VITE_SUPABASE_URL" ] && [ -n "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then echo "Supabase cloud: configured"; else echo "Supabase cloud: NOT configured (offline mode will still build)"; fi
+
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
