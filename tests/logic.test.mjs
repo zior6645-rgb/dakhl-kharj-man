@@ -121,7 +121,7 @@ assert(fileSaver.includes('drawCashCandleChart'), 'PDF includes cash-flow candle
 assert(fileSaver.includes('drawMovingAverageChart'), 'PDF includes moving-average chart');
 assert(fileSaver.includes('indicators'), 'PDF includes calculated indicators');
 assert(fileSaver.includes('protected void handleOnNewIntent'), 'FileSaver handles Android new intents');
-assert(androidBuild.includes('versionCode 13'), 'Android build code is incremented for final fixes');
+assert(androidBuild.includes('versionCode 14'), 'Android update code is incremented for this final release');
 assert(app.includes('cloudAuthSetupHint'), 'Cloud setup message explains email and Supabase requirements');
 assert(app.includes('fetchCloudData(session)'), 'Cloud mode validates backend connectivity before enabling');
 
