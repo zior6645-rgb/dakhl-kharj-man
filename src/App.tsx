@@ -556,6 +556,7 @@ export default function App() {
           const type:TxType | null = row.type === 'income' || row.type === 'expense'
             ? row.type
             : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : null);
+          if (!type) return null;
           const currency = row.currency && CURRENCY_MAP[row.currency as CurrencyCode] ? row.currency as CurrencyCode : settings.currency;
           const amount=parseAmount(row.amount,currency);
           const id=row.id || 'csv-'+uid();
