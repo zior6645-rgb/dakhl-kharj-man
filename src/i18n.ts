@@ -19,7 +19,7 @@ export type TranslationKey =
   | 'categoryAdded'|'categoryExists'|'categoryDeleted'|'categoryHasTransactions'|'defaultCategoryCannotDelete'
   | 'categoryNameRequired'|'allDataDeleted'|'themeChanged'|'currencySummary'|'otherCurrencies'
   | 'noBalanceForCurrency'|'currencyNote'|'noAutoConversion'|'mainNavigation'|'home'|'transactionsTab'
-  | 'reportsTab'|'settingsTab'|'currencyFilter'|'allCurrencies'|'thisCurrency'|'privacyLocalOnly'
+  | 'reportsTab'|'settingsTab'|'currencyFilter'|'allCurrencies'|'thisCurrency'|'privacyLocalOnly'|'cloudDataNote'
   | 'dataIntegrityNote'|'openSource'|'languageReload'|'selectedCurrency'|'customCategory'|'confirmDeleteTransaction'
   | 'fontSize'|'fontSmall'|'fontDefault'|'fontLarge'|'fontXlarge'|'fontXxlarge'|'storageMode'|'offlineMode'|'cloudMode'|'cloudAccount'|'cloudEmail'|'cloudPassword'|'cloudConfirmPassword'|'cloudOtp'|'cloudVerify'|'cloudSignIn'|'cloudSignUp'|'cloudLogout'|'cloudResendCode'|'cloudForgotPassword'|'cloudCreateAccount'|'cloudExistingAccount'|'cloudOtpSent'|'cloudEmailCodeHint'|'cloudModeRequiresAccount'|'cloudNotConfigured'|'cloudConfigureHint'|'cloudSyncFailed'|'cloudImportedLocal'|'cloudSignedOut'|'cloudPasswordResetSent'|'invalidEmail'|'passwordTooShort'|'passwordsMismatch'|'otpInvalid'|'cloudTransferLocal';
 
