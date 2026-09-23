@@ -337,7 +337,6 @@ export default function App() {
   const reportTxs = useMemo(() => filterByDateRange(txs,pr.from,pr.to,reportCurrency), [txs,pr.from,pr.to,reportCurrency]);
   const reportTotals = useMemo(() => calcTotals(reportTxs,reportCurrency), [reportTxs,reportCurrency]);
   const dist = useMemo(() => groupByCategory(reportTxs,'expense',reportCurrency), [reportTxs,reportCurrency]);
-  const maxDist = Math.max(1,...dist.map(x => x.total));
   const repTrend = useMemo(() => {
     if (period === '3m') return groupByMonth(reportTxs,lastNMonths(3),reportCurrency);
     if (period === 'year') return groupByMonth(reportTxs,lastNMonths(12),reportCurrency);
@@ -365,10 +364,8 @@ export default function App() {
     const monthDays = Math.max(1,Math.round((monthEnd.getTime()-monthStart.getTime())/86400000)+1);
     return groupByDay(reportTxs,lastNDays(monthDays,monthEnd),reportCurrency);
   }, [reportTxs,period,cFrom,cTo,reportCurrency]);
-  const maxRep = Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]));
   const reportExpenseDist = useMemo(() => [...dist].sort((a,b) => b.total-a.total), [dist]);
   const expenseTransactions = useMemo(() => reportTxs.filter(x => x.type==='expense'), [reportTxs]);
-  const incomeTransactions = useMemo(() => reportTxs.filter(x => x.type==='income'), [reportTxs]);
   const savingsRate = reportTotals.income > 0 ? (reportTotals.balance / reportTotals.income) * 100 : null;
   const expenseRatio = reportTotals.income > 0 ? (reportTotals.expense / reportTotals.income) * 100 : null;
   const averageExpense = expenseTransactions.length ? reportTotals.expense / expenseTransactions.length : 0;
