@@ -475,6 +475,12 @@ export default function App() {
       setCloudAuthOpen(true);
       return;
     }
+    try {
+      await fetchCloudData(session);
+    } catch (e) {
+      say(e instanceof Error ? e.message : t(lang,'cloudSyncFailed'));
+      return;
+    }
     setCloudSession(session);
     setSettings(s => ({...s,storageMode:'cloud'}));
   }
@@ -497,8 +503,8 @@ export default function App() {
       const next=data.transactions.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
       setTxs(next);
       try { localStorage.setItem(LS_CLOUD_FALLBACK,JSON.stringify(next)); localStorage.setItem(LS_CLOUD_CATS,JSON.stringify(mergedCats)); } catch {}
-    } catch {
-      say(t(lang,'cloudSyncFailed'));
+    } catch (e) {
+      say(e instanceof Error ? e.message : t(lang,'cloudSyncFailed'));
     }
   }
 
