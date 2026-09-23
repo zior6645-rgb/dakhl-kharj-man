@@ -1276,9 +1276,13 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
     setBusy(true);
     try {
       if (mode==='signup') {
-        await signUp(normalized,password);
-        setStep('verify');
-        setInfo(t(lang,'cloudOtpSent'));
+        const result=await signUp(normalized,password);
+        if (result.session) {
+          onAuthenticated(result.session);
+        } else {
+          setStep('verify');
+          setInfo(t(lang,'cloudOtpSent'));
+        }
       } else {
         const session=await signInWithPassword(normalized,password);
         onAuthenticated(session);
