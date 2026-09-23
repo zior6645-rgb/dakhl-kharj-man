@@ -61,20 +61,19 @@ public class FileSaverPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(android.content.Intent intent) {
         super.handleOnNewIntent(intent);
-        Uri uri = intent.getData();
-        if (uri == null && intent.getExtras() != null) {
-            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
-            if (extra instanceof Uri) uri = (Uri) extra;
-        }
+        Uri uri = extractSharedUri(intent);
         String action = intent.getAction();
         if (uri == null || !(Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action))) return;
         try {
             JSObject data = readUriToJson(uri);
             notifyListeners("fileOpen", data, true);
-            intent.setData(null);
-            intent.removeExtra(Intent.EXTRA_STREAM);
-            intent.setAction(Intent.ACTION_MAIN);
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            JSObject error = new JSObject();
+            error.put("pending", true);
+            error.put("error", "Could not open the selected file: " + ex.getMessage());
+            notifyListeners("fileOpen", error, true);
+        } finally {
+            clearConsumedIntent(intent);
         }
     }
 
@@ -85,11 +84,7 @@ public class FileSaverPlugin extends Plugin {
             call.resolve(new JSObject());
             return;
         }
-        Uri uri = intent.getData();
-        if (uri == null && intent.getExtras() != null) {
-            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
-            if (extra instanceof Uri) uri = (Uri) extra;
-        }
+        Uri uri = extractSharedUri(intent);
         String action = intent.getAction();
         if (uri == null || !(Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action))) {
             JSObject none = new JSObject();
@@ -97,10 +92,48 @@ public class FileSaverPlugin extends Plugin {
             call.resolve(none);
             return;
         }
-        readUri(call, uri);
+        try {
+            call.resolve(readUriToJson(uri));
+        } catch (Exception ex) {
+            JSObject error = new JSObject();
+            error.put("pending", true);
+            error.put("error", "Could not open the selected file: " + ex.getMessage());
+            call.resolve(error);
+        } finally {
+            clearConsumedIntent(intent);
+        }
+    }
+
+    private Uri extractSharedUri(Intent intent) {
+        if (intent == null) return null;
+        Uri uri = intent.getData();
+        if (uri == null && intent.getExtras() != null) {
+            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
+            if (extra instanceof Uri) uri = (Uri) extra;
+        }
+        if (uri == null && intent.getClipData() != null && intent.getClipData().getItemCount() > 0) {
+            uri = intent.getClipData().getItemAt(0).getUri();
+        }
+        return uri;
+    }
+
+    private void clearConsumedIntent(Intent intent) {
+        if (intent == null) return;
         intent.setData(null);
         intent.removeExtra(Intent.EXTRA_STREAM);
+        intent.setClipData(null);
         intent.setAction(Intent.ACTION_MAIN);
+    }
+
+    private String detectMimeType(String fileName, String resolverMime) {
+        String mime = resolverMime == null ? "" : resolverMime.toLowerCase(java.util.Locale.ROOT);
+        String lower = fileName == null ? "" : fileName.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".csv")) return "text/csv";
+        if (lower.endsWith(".json")) return "application/json";
+        if (mime.isEmpty() || "application/octet-stream".equals(mime) || "text/plain".equals(mime) || "*/*".equals(mime)) {
+            return mime.isEmpty() ? "application/octet-stream" : mime;
+        }
+        return mime;
     }
 
     private JSObject readUriToJson(Uri uri) throws Exception {
@@ -138,7 +171,7 @@ public class FileSaverPlugin extends Plugin {
         response.put("pending", true);
         response.put("filename", fileName);
         String mime = resolver.getType(uri);
-        response.put("mimeType", mime == null ? "application/octet-stream" : mime);
+        response.put("mimeType", detectMimeType(fileName, mime));
         response.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
         return response;
     }
