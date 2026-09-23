@@ -91,11 +91,62 @@ export function displayDate(value: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { year:'numeric', month:'short', day:'numeric' }).format(new Date(y,m-1,d,12));
 }
 
-export function toCSV(rows: Transaction[]): string {
+export function toCSV(rows: Array<Transaction & { categoryId?: string }>): string {
   const esc = (s: string | number) => '"' + String(s).replace(/"/g,'""') + '"';
-  const head = 'id,type,amount,currency,title,category,date,time,description,createdAt,updatedAt';
+  const head = 'id,type,amount,currency,title,categoryId,category,date,time,description,createdAt,updatedAt';
   return head + '\n' + rows.map(r => [
-    esc(r.id), esc(r.type), String(r.amount), esc(r.currency), esc(r.title), esc(r.category),
+    esc(r.id), esc(r.type), String(r.amount), esc(r.currency), esc(r.title), esc(r.categoryId ?? r.category), esc(r.category),
     esc(r.date), esc(r.time), esc(r.description), esc(r.createdAt), esc(r.updatedAt)
   ].join(',')).join('\n');
+}
+
+export function parseCSV(text: string): string[][] {
+  const source = String(text).replace(/^\uFEFF/, '');
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (source[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      quoted = true;
+    } else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (ch === '\r') {
+      if (source[i + 1] === '\n') i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+
+  if (quoted) throw new Error('Unclosed CSV quote.');
+  if (cell !== '' || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows.filter(r => r.some(v => v.trim() !== ''));
 }
