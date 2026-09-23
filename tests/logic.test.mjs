@@ -91,7 +91,7 @@ assert(fileSaver.includes('Intent.CATEGORY_OPENABLE'), 'native saver requests a 
 assert(fileSaver.includes('startActivityForResult(call, intent, SAVE_CALLBACK)'), 'native saver returns through a Capacitor activity callback');
 assert(fileSaver.includes('@ActivityCallback'), 'native saver handles the Android activity result');
 assert(fileSaver.includes('openOutputStream(uri)'), 'native saver writes to the location selected by the user');
-assert(androidBuild.includes('versionCode 11'), 'Android build code is incremented for CSV restore support');
+assert(androidBuild.includes('versionCode 12'), 'Android build code is incremented for PDF export support');
 assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 
