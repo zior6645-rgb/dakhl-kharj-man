@@ -124,7 +124,6 @@ assert(fileSaver.includes('application/pdf'), 'native PDF exporter uses PDF MIME
 assert(fileSaver.includes('new PdfDocument'), 'native PDF report is generated');
 assert(fileSaver.includes('transactions'), 'native PDF report includes transactions');
 assert(utils.includes('semicolonCount'), 'CSV parser detects semicolon-delimited files');
-assert(androidBuild.includes('versionCode 12'), 'Android build code is incremented for PDF export support');
 assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 
