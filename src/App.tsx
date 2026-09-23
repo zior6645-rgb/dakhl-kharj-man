@@ -22,6 +22,14 @@ type PdfReport = {
   typeLabel:string;
   categoryLabel:string;
   descriptionLabel:string;
+  indicatorsTitle:string;
+  chartsTitle:string;
+  savingsRate:string;
+  expenseRatio:string;
+  averageIncome:string;
+  averageExpense:string;
+  largestExpense:string;
+  averageTransaction:string;
   summaries:Array<{
     currency:string;
     currencyLabel:string;
@@ -32,6 +40,8 @@ type PdfReport = {
     expenseLabel:string;
     balanceLabel:string;
   }>;
+  categoryDistribution:Array<{label:string;value:number;percent:number}>;
+  trend:Array<{date:string;income:number;expense:number;balance:number}>;
   transactions:PdfTransaction[];
 };
 
@@ -354,6 +364,64 @@ export default function App() {
     return groupByDay(reportTxs,lastNDays(monthDays,monthEnd),reportCurrency);
   }, [reportTxs,period,cFrom,cTo,reportCurrency]);
   const maxRep = Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]));
+  const reportExpenseDist = useMemo(() => [...dist].sort((a,b) => b.total-a.total), [dist]);
+  const expenseTransactions = useMemo(() => reportTxs.filter(x => x.type==='expense'), [reportTxs]);
+  const incomeTransactions = useMemo(() => reportTxs.filter(x => x.type==='income'), [reportTxs]);
+  const savingsRate = reportTotals.income > 0 ? (reportTotals.balance / reportTotals.income) * 100 : null;
+  const expenseRatio = reportTotals.income > 0 ? (reportTotals.expense / reportTotals.income) * 100 : null;
+  const averageIncome = incomeTransactions.length ? reportTotals.income / incomeTransactions.length : 0;
+  const averageExpense = expenseTransactions.length ? reportTotals.expense / expenseTransactions.length : 0;
+  const averageTransaction = reportTotals.count ? (reportTotals.income + reportTotals.expense) / reportTotals.count : 0;
+  const largestExpenseTx = expenseTransactions.reduce<Transaction | null>((max,x) => !max || x.amount > max.amount ? x : max, null);
+  const balanceSeries = useMemo(() => {
+    let balance=0;
+    return [...reportTxs]
+      .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
+      .reduce<Array<{date:string;income:number;expense:number;balance:number}>>((acc,x) => {
+        const last=acc[acc.length-1];
+        const income=x.type==='income' ? x.amount : 0;
+        const expense=x.type==='expense' ? x.amount : 0;
+        balance += income-expense;
+        if(last && last.date===x.date) {
+          last.income += income;
+          last.expense += expense;
+          last.balance = balance;
+        } else {
+          acc.push({date:x.date,income,expense,balance});
+        }
+        return acc;
+      },[]);
+  }, [reportTxs]);
+
+  const lineWidth=680;
+  const lineHeight=240;
+  const linePadX=40;
+  const linePadY=24;
+  const lineMax=Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]),...balanceSeries.map(x=>Math.abs(x.balance)));
+  const makeLinePoints=(data:Array<{income:number;expense:number}>,key:'income'|'expense') => data.map((d,i) => {
+    const x=data.length<=1 ? lineWidth/2 : linePadX + (i/(data.length-1))*(lineWidth-linePadX*2);
+    const y=lineHeight-linePadY-(d[key]/lineMax)*(lineHeight-linePadY*2);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  const incomeLinePoints=makeLinePoints(repTrend,'income');
+  const expenseLinePoints=makeLinePoints(repTrend,'expense');
+  const balanceMax=Math.max(1,...balanceSeries.map(x=>Math.abs(x.balance)));
+  const balanceLinePoints=balanceSeries.map((d,i) => {
+    const x=balanceSeries.length<=1 ? lineWidth/2 : linePadX + (i/(balanceSeries.length-1))*(lineWidth-linePadX*2);
+    const y=lineHeight/2 - (d.balance/balanceMax)*(lineHeight/2-linePadY);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  const categoryStops=(() => {
+    if(!reportExpenseDist.length) return 'transparent';
+    let cursor=0;
+    const colors=['#2f7d6a','#5a9f8b','#7eb7a7','#a5cfc2','#d0e5de','#e6f0ed'];
+    return reportExpenseDist.map((x,i) => {
+      const start=cursor;
+      cursor += x.total/Math.max(1,reportTotals.expense)*100;
+      return colors[i%colors.length]+' '+start.toFixed(2)+'% '+cursor.toFixed(2)+'%';
+    }).join(',');
+  })();
+
   const customRangeError = period === 'custom' && cFrom > cTo;
 
   function persistLocal(next:Transaction[]) {
