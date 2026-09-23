@@ -24,12 +24,7 @@ type PdfReport = {
   descriptionLabel:string;
   indicatorsTitle:string;
   chartsTitle:string;
-  savingsRate:string;
-  expenseRatio:string;
-  averageIncome:string;
-  averageExpense:string;
-  largestExpense:string;
-  averageTransaction:string;
+  indicators:Array<{label:string;value:string}>;
   summaries:Array<{
     currency:string;
     currencyLabel:string;
@@ -591,12 +586,14 @@ export default function App() {
       descriptionLabel:t(lang,'pdfDescription'),
       indicatorsTitle:t(lang,'financialIndicators'),
       chartsTitle:t(lang,'reportCharts'),
-      savingsRate:savingsRate === null ? '—' : fmtNum(savingsRate,locale,1) + '%',
-      expenseRatio:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%',
-      averageIncome:fmtMoney(averageIncome,reportCurrency,locale),
-      averageExpense:fmtMoney(averageExpense,reportCurrency,locale),
-      largestExpense:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—',
-      averageTransaction:fmtMoney(averageTransaction,reportCurrency,locale),
+      indicators:[
+        {label:t(lang,'savingsRate'),value:savingsRate === null ? '—' : fmtNum(savingsRate,locale,1) + '%'},
+        {label:t(lang,'expenseRatio'),value:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%'},
+        {label:t(lang,'averageIncome'),value:fmtMoney(averageIncome,reportCurrency,locale)},
+        {label:t(lang,'averageExpense'),value:fmtMoney(averageExpense,reportCurrency,locale)},
+        {label:t(lang,'largestExpense'),value:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'},
+        {label:t(lang,'averageTransaction'),value:fmtMoney(averageTransaction,reportCurrency,locale)}
+      ],
       summaries,
       categoryDistribution:reportExpenseDist.map(x => ({
         label:categoryName(x.category),
