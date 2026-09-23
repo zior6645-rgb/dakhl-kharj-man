@@ -1119,8 +1119,9 @@ export default function App() {
       </>}
 
       {tab==='reports' && <>
+        <section className="report-page" aria-label={t(lang,'reports')}>
         <h2>{t(lang,'reports')} — {t(lang,pr.labelKey)} — {CURRENCY_MAP[reportCurrency].names[lang]}</h2>
-        <div className="row">
+        <div className="report-periods">
           {(['today','week','month','3m','year','custom'] as Period[]).map(p => <button key={p} className={period===p?'btn':'btn ghost'} onClick={() => setPeriod(p)}>
             {p==='today'?t(lang,'today'):p==='week'?t(lang,'thisWeek'):p==='month'?t(lang,'thisMonth'):p==='3m'?t(lang,'last3Months'):p==='year'?t(lang,'thisYear'):t(lang,'customRange')}
           </button>)}
@@ -1132,7 +1133,7 @@ export default function App() {
         <div className="currency-note">{t(lang,'noAutoConversion')}</div>
         {customRangeError ? <div className="err">{t(lang,'rangeStartAfterEnd')}</div> : reportTxs.length===0 ? <div className="empty">{t(lang,'noDataInRange')}</div> :
           <>
-            <div className="grid cards">
+            <div className="report-kpi-grid">
               <div className="card"><div className="k">{t(lang,'totalIncomeReport')}</div><div className="v in">{fmtMoney(reportTotals.income,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'totalExpenseReport')}</div><div className="v out">{fmtMoney(reportTotals.expense,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'balance')}</div><div className="v bal">{fmtMoney(reportTotals.balance,reportCurrency,locale)}</div></div>
@@ -1140,7 +1141,7 @@ export default function App() {
             </div>
 
             <h3>{t(lang,'financialIndicators')}</h3>
-            <div className="grid cards">
+            <div className="report-kpi-grid">
               <div className="card"><div className="k">{t(lang,'savingsRate')}</div><div className="v">{savingsRate===null ? '—' : fmtNum(savingsRate,locale,1)+'%'}</div></div>
               <div className="card"><div className="k">{t(lang,'expenseRatio')}</div><div className="v">{expenseRatio===null ? '—' : fmtNum(expenseRatio,locale,1)+'%'}</div></div>
               <div className="card"><div className="k">{t(lang,'averageIncome')}</div><div className="v in">{fmtMoney(averageIncome,reportCurrency,locale)}</div></div>
@@ -1155,10 +1156,10 @@ export default function App() {
             </div>
 
             <h3>{t(lang,'reportCharts')}</h3>
-            <div className="grid">
-              <div className="card">
+            <div className="report-chart-grid">
+              <div className="card report-chart-card report-chart-wide">
                 <h3>{t(lang,'incomeExpenseLine')}</h3>
-                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'incomeExpenseLine')} style={{width:'100%',height:'auto',overflow:'visible'}}>
+                <svg className="report-chart-svg" viewBox="0 0 680 240" role="img" aria-label={t(lang,'incomeExpenseLine')} style={{width:'100%',height:'auto',overflow:'visible'}}>
                   <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
                   <polyline points={incomeLinePoints} fill="none" stroke="#2f7d6a" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                   <polyline points={expenseLinePoints} fill="none" stroke="#b85b5b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
@@ -1167,20 +1168,20 @@ export default function App() {
                 <div className="row space"><span className="muted">{t(lang,'income')}</span><span className="muted">{t(lang,'expense')}</span></div>
               </div>
 
-              <div className="card">
+              <div className="card report-chart-card">
                 <h3>{t(lang,'balanceTrend')}</h3>
-                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'balanceTrend')} style={{width:'100%',height:'auto'}}>
+                <svg className="report-chart-svg" viewBox="0 0 680 240" role="img" aria-label={t(lang,'balanceTrend')} style={{width:'100%',height:'auto'}}>
                   <line x1="40" y1="120" x2="640" y2="120" stroke="currentColor" opacity=".18" />
                   <polyline points={balanceLinePoints} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <div className="muted">{t(lang,'monthlyComparison')}</div>
               </div>
 
-              <div className="card">
+              <div className="card report-chart-card">
                 <h3>{t(lang,'categoryChart')}</h3>
-                <div style={{display:'flex',gap:18,alignItems:'center',flexWrap:'wrap'}}>
-                  <div aria-label={t(lang,'categoryChart')} style={{width:190,height:190,borderRadius:'50%',background:'conic-gradient('+categoryStops+')',position:'relative'}}>
-                    <div style={{position:'absolute',inset:42,borderRadius:'50%',background:'var(--card,#fff)'}} />
+                <div className="report-donut-row">
+                  <div className="report-donut" aria-label={t(lang,'categoryChart')} style={{borderRadius:'50%',background:'conic-gradient('+categoryStops+')',position:'relative'}}>
+                    <div style={{position:'absolute',inset:'23%',borderRadius:'50%',background:'var(--card,#fff)'}} />
                   </div>
                   <div style={{flex:1,minWidth:180}}>{reportExpenseDist.slice(0,8).map((x,i)=><div className="row space" key={x.category} style={{marginBottom:6}}>
                     <span><i style={{display:'inline-block',width:10,height:10,borderRadius:3,marginLeft:6,background:['#2f7d6a','#5a9f8b','#7eb7a7','#a5cfc2','#d0e5de','#e6f0ed'][i%6]}} />{categoryName(x.category)}</span>
@@ -1189,7 +1190,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="card">
+              <div className="card report-chart-card">
                 <h3>{t(lang,'incomeExpenseTrend')}</h3>
                 <div className="bars">
                   {repTrend.map(d => <div className="bar" key={d.date}>
@@ -1201,19 +1202,19 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid">
-              <div className="card">
+            <div className="report-chart-grid">
+              <div className="card report-chart-card">
                 <h3>{t(lang,'cashflowMovingAverage')}</h3>
-                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'cashflowMovingAverage')} style={{width:'100%',height:'auto'}}>
+                <svg className="report-chart-svg" viewBox="0 0 680 240" role="img" aria-label={t(lang,'cashflowMovingAverage')} style={{width:'100%',height:'auto'}}>
                   <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
                   <polyline points={makeLinePoints(movingAverageSeries.map(x=>({income:x.income,expense:x.expense})),'income')} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                   <polyline points={makeLinePoints(movingAverageSeries.map(x=>({income:x.income,expense:x.expense})),'expense')} fill="none" stroke="#b85b5b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <div className="muted">{t(lang,'movingAverage7Day')}</div>
               </div>
-              <div className="card">
+              <div className="card report-chart-card">
                 <h3>{t(lang,'cashflowCandles')}</h3>
-                <svg viewBox="0 0 680 250" role="img" aria-label={t(lang,'cashflowCandles')} style={{width:'100%',height:'auto'}}>
+                <svg className="report-chart-svg" viewBox="0 0 680 250" role="img" aria-label={t(lang,'cashflowCandles')} style={{width:'100%',height:'auto'}}>
                   <line x1="40" y1="220" x2="640" y2="220" stroke="currentColor" opacity=".18" />
                   {cashCandleSeries.map((d,i)=>{
                     const max=Math.max(1,...cashCandleSeries.map(x=>Math.abs(x.high)),...cashCandleSeries.map(x=>Math.abs(x.low)));
@@ -1235,6 +1236,7 @@ export default function App() {
               <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
             </div>)}</div>
           </>}
+        </section>
       </>}
 
       {tab==='settings' && <>
