@@ -138,6 +138,12 @@ public class FileSaverPlugin extends Plugin {
         response.put("pending", true);
         response.put("filename", fileName);
         String mime = resolver.getType(uri);
+        if (mime == null || mime.trim().isEmpty() || "application/octet-stream".equalsIgnoreCase(mime) || "binary/octet-stream".equalsIgnoreCase(mime)) {
+            String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+            if (lower.endsWith(".csv")) mime = "text/csv";
+            else if (lower.endsWith(".json")) mime = "application/json";
+            else if (lower.endsWith(".txt")) mime = "text/plain";
+        }
         response.put("mimeType", mime == null ? "application/octet-stream" : mime);
         response.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
         return response;
