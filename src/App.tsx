@@ -52,6 +52,7 @@ type FileSaverPlugin = {
   savePdf(options: { filename:string; report:PdfReport }): Promise<{ uri:string; saved:boolean }>;
   pickFile(options?: { mimeType?:string }): Promise<NativeImportResult>;
   getPendingFile(): Promise<NativeImportResult>;
+  addListener(eventName:'fileOpen', listener:(result:NativeImportResult)=>void): Promise<{remove:()=>Promise<void>}>;
 };
 
 const FileSaver = registerPlugin<FileSaverPlugin>('FileSaver');
@@ -898,13 +899,21 @@ export default function App() {
   useEffect(() => {
     if (Capacitor.getPlatform() !== 'android') return;
     let active=true;
+    let handle:{remove:()=>Promise<void>}|null=null;
+    void FileSaver.addListener('fileOpen', async result => {
+      if (!active) return;
+      await importNativeResult(result);
+    }).then(v => { handle=v; });
     void FileSaver.getPendingFile()
       .then(async result => {
         if (!active || !result?.pending) return;
         await importNativeResult(result);
       })
       .catch(() => {});
-    return () => { active=false; };
+    return () => {
+      active=false;
+      void handle?.remove();
+    };
   }, []);
 
   async function addCategory() {
