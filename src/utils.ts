@@ -102,6 +102,11 @@ export function toCSV(rows: Array<Transaction & { categoryId?: string }>): strin
 
 export function parseCSV(text: string): string[][] {
   const source = String(text).replace(/^\uFEFF/, '');
+  const firstLine = source.split(/\r?\n/, 1)[0] ?? '';
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
+
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';
@@ -122,9 +127,10 @@ export function parseCSV(text: string): string[][] {
       }
       continue;
     }
+
     if (ch === '"') {
       quoted = true;
-    } else if (ch === ',') {
+    } else if (ch === delimiter) {
       row.push(cell);
       cell = '';
     } else if (ch === '\n') {
