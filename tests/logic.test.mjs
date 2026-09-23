@@ -106,6 +106,12 @@ assert(app.includes('balanceTrend'), 'report UI includes a balance trend chart')
 assert(app.includes('categoryChart'), 'report UI includes a category chart');
 assert(app.includes('savingsRate'), 'report calculations include savings rate');
 assert(app.includes('expenseRatio'), 'report calculations include expense ratio');
+assert(app.includes("const openingBalance = useMemo"), 'balance trend uses opening balance before period');
+assert(app.includes("const closingBalance = openingBalance + reportTotals.balance"), 'report balance shows period closing balance');
+assert(app.includes("balance += d.income-d.expense"), 'balance trend accumulates period income and expense');
+assert(app.includes("const balanceMin=Math.min(0,...balanceSeries.map(x=>x.balance))"), 'balance trend uses dynamic minimum scaling');
+assert(app.includes("const balanceMaxValue=Math.max(0,...balanceSeries.map(x=>x.balance))"), 'balance trend uses dynamic maximum scaling');
+
 assert(app.includes('FileSaver.savePdf'), 'PDF export uses native PDF saving');
 assert(fileSaver.includes('new PdfDocument'), 'PDF export creates a native Android PDF');
 assert(fileSaver.includes('drawCategoryChart'), 'PDF includes category chart');
