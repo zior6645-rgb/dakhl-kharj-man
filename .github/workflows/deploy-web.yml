@@ -11,6 +11,7 @@ on:
       - 'package*.json'
       - 'vite.config.ts'
       - '.github/workflows/deploy-web.yml'
+      - 'tests/**'
 
 permissions:
   contents: read
