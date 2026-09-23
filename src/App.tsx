@@ -35,9 +35,18 @@ type PdfReport = {
   transactions:PdfTransaction[];
 };
 
+type NativeImportResult = {
+  pending?: boolean;
+  filename?: string;
+  mimeType?: string;
+  data?: string;
+};
+
 type FileSaverPlugin = {
   saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; path:string; saved:boolean }>;
   savePdf(options: { filename:string; report:PdfReport }): Promise<{ uri:string; saved:boolean }>;
+  pickFile(options?: { mimeType?:string }): Promise<NativeImportResult>;
+  getPendingFile(): Promise<NativeImportResult>;
 };
 
 const FileSaver = registerPlugin<FileSaverPlugin>('FileSaver');
@@ -773,6 +782,46 @@ export default function App() {
     }
   }
 
+  function base64ToFile(data:string, filename:string, mimeType:string) {
+    const binary=atob(data);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    return new File([bytes],filename,{type:mimeType});
+  }
+
+  async function importNativeResult(result:NativeImportResult) {
+    if(!result?.data || !result.filename) return false;
+    const mime=result.mimeType || (result.filename.toLowerCase().endsWith('.csv') ? 'text/csv' : 'application/json');
+    await importFile(base64ToFile(result.data,result.filename,mime));
+    return true;
+  }
+
+  async function handleImportClick() {
+    if (Capacitor.getPlatform() === 'android') {
+      try {
+        const result=await FileSaver.pickFile({mimeType:'*/*'});
+        await importNativeResult(result);
+      } catch (e) {
+        const message=e instanceof Error ? e.message : String(e);
+        if (message && !/canceled/i.test(message)) say(message);
+      }
+      return;
+    }
+    fileRef.current?.click();
+  }
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return;
+    let active=true;
+    void FileSaver.getPendingFile()
+      .then(async result => {
+        if (!active || !result?.pending) return;
+        await importNativeResult(result);
+      })
+      .catch(() => {});
+    return () => { active=false; };
+  }, []);
+
   async function addCategory() {
     const label=newCat.trim();
     if (!label) { say(t(lang,'categoryNameRequired')); return; }
@@ -1000,7 +1049,7 @@ export default function App() {
 
         <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'backupRestore')}</h3>
-          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={exportPdf}>{t(lang,'exportPdf')}</button><button className="btn ghost" onClick={() => fileRef.current?.click()}>{t(lang,'importFile')}</button></div>
+          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={exportPdf}>{t(lang,'exportPdf')}</button><button className="btn ghost" onClick={() => void handleImportClick()}>{t(lang,'importFile')}</button></div>
           <input ref={fileRef} type="file" accept="application/json,.json,text/csv,.csv" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
           <div className="currency-note">{t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
         </div>
