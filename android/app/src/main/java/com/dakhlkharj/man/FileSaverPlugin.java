@@ -36,6 +36,98 @@ public class FileSaverPlugin extends Plugin {
     private static final String SAVE_PDF_CALLBACK = "handleSavePdf";
 
     @PluginMethod
+    public void pickFile(PluginCall call) {
+        final Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "text/csv",
+                "text/comma-separated-values",
+                "application/vnd.ms-excel",
+                "application/json"
+        });
+        startActivityForResult(call, intent, "handlePickFile");
+    }
+
+    @ActivityCallback
+    private void handlePickFile(PluginCall call, ActivityResult result) {
+        if (result == null || result.getData() == null || result.getData().getData() == null) {
+            call.reject("File selection was canceled.");
+            return;
+        }
+        readUri(call, result.getData().getData());
+    }
+
+    @PluginMethod
+    public void getPendingFile(PluginCall call) {
+        final Intent intent = getActivity().getIntent();
+        if (intent == null) {
+            call.resolve(new JSObject());
+            return;
+        }
+        Uri uri = intent.getData();
+        if (uri == null && intent.getExtras() != null) {
+            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
+            if (extra instanceof Uri) uri = (Uri) extra;
+        }
+        String action = intent.getAction();
+        if (uri == null || !(Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action))) {
+            JSObject none = new JSObject();
+            none.put("pending", false);
+            call.resolve(none);
+            return;
+        }
+        readUri(call, uri);
+        intent.setData(null);
+        intent.removeExtra(Intent.EXTRA_STREAM);
+        intent.setAction(Intent.ACTION_MAIN);
+    }
+
+    private void readUri(PluginCall call, Uri uri) {
+        try {
+            android.content.ContentResolver resolver = getContext().getContentResolver();
+            byte[] bytes;
+            try (java.io.InputStream input = resolver.openInputStream(uri);
+                 java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
+                if (input == null) throw new IllegalStateException("Could not open the selected file.");
+                byte[] chunk = new byte[8192];
+                int n;
+                while ((n = input.read(chunk)) >= 0) buffer.write(chunk, 0, n);
+                bytes = buffer.toByteArray();
+            }
+
+            String fileName = "imported-file";
+            android.database.Cursor cursor = resolver.query(
+                    uri,
+                    new String[]{android.provider.OpenableColumns.DISPLAY_NAME},
+                    null,
+                    null,
+                    null
+            );
+            if (cursor != null) {
+                try {
+                    if (cursor.moveToFirst()) {
+                        int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                        if (index >= 0 && cursor.getString(index) != null) fileName = cursor.getString(index);
+                    }
+                } finally {
+                    cursor.close();
+                }
+            }
+
+            JSObject response = new JSObject();
+            response.put("pending", true);
+            response.put("filename", fileName);
+            String mime = resolver.getType(uri);
+            response.put("mimeType", mime == null ? "application/octet-stream" : mime);
+            response.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            call.resolve(response);
+        } catch (Exception ex) {
+            call.reject("Could not read the selected file.", ex);
+        }
+    }
+
+    @PluginMethod
     public void saveFile(PluginCall call) {
         final String fileName = call.getString("filename");
         final String mimeType = call.getString("mimeType", "application/octet-stream");
