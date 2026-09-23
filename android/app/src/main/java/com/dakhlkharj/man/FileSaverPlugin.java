@@ -360,7 +360,8 @@ public class FileSaverPlugin extends Plugin {
 
         JSONArray categories = report.optJSONArray("categoryDistribution");
         JSONArray trend = report.optJSONArray("trend");
-        if ((categories != null && categories.length() > 0) || (trend != null && trend.length() > 0)) {
+        JSONArray candles = report.optJSONArray("candles");
+        if ((categories != null && categories.length() > 0) || (trend != null && trend.length() > 0) || (candles != null && candles.length() > 0)) {
             if (y + 470 > pageHeight - margin) {
                 document.finishPage(page);
                 pageNumber++;
@@ -375,6 +376,18 @@ public class FileSaverPlugin extends Plugin {
             }
             if (trend != null && trend.length() > 0) {
                 drawTrendChart(canvas, trend, margin, y, contentWidth, 235);
+                y += 255;
+            }
+            if (candles != null && candles.length() > 0) {
+                if (y + 255 > pageHeight - margin) {
+                    document.finishPage(page);
+                    pageNumber++;
+                    page = document.startPage(new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create());
+                    canvas = page.getCanvas();
+                    y = margin;
+                    y = drawText(canvas, report.optString("chartsTitle", "Report charts"), sectionPaint, margin, y, contentWidth, true) + 18;
+                }
+                drawCandleChart(canvas, candles, margin, y, contentWidth, 235);
                 y += 255;
             }
         }
@@ -516,6 +529,51 @@ public class FileSaverPlugin extends Plugin {
             canvas.drawCircle(left + 6, yy + 9, 6, dot);
             String text = item.optString("label","") + "  " + String.format(java.util.Locale.US, "%.1f%%", item.optDouble("percent",0));
             drawText(canvas, text, legend, (int) left + 20, yy, width - chartSize - 54, true);
+        }
+    }
+
+    private void drawCandleChart(Canvas canvas, JSONArray candles, int x, int y, int width, int height) throws Exception {
+        int plotLeft = x + 42;
+        int plotTop = y + 16;
+        int plotRight = x + width - 18;
+        int plotBottom = y + height - 30;
+        Paint axis = new Paint(Paint.ANTI_ALIAS_FLAG);
+        axis.setColor(Color.rgb(175,185,181));
+        axis.setStrokeWidth(2);
+        canvas.drawLine(plotLeft, plotBottom, plotRight, plotBottom, axis);
+
+        double min = 0;
+        double max = 0;
+        for (int i = 0; i < candles.length(); i++) {
+            JSONObject item = candles.getJSONObject(i);
+            min = Math.min(min, item.optDouble("low", 0));
+            max = Math.max(max, item.optDouble("high", 0));
+        }
+        double span = Math.max(1, max - min);
+        int n = candles.length();
+        float step = n <= 1 ? (plotRight - plotLeft) : (plotRight - plotLeft) / (float)n;
+        float bodyW = Math.max(8, Math.min(34, step * 0.44f));
+
+        for (int i = 0; i < n; i++) {
+            JSONObject item = candles.getJSONObject(i);
+            double open = item.optDouble("open", 0);
+            double high = item.optDouble("high", 0);
+            double low = item.optDouble("low", 0);
+            double close = item.optDouble("close", 0);
+            float cx = n <= 1 ? (plotLeft + plotRight) / 2f : plotLeft + i * step + step / 2f;
+            float highY = (float)(plotBottom - ((high-min)/span) * (plotBottom-plotTop));
+            float lowY = (float)(plotBottom - ((low-min)/span) * (plotBottom-plotTop));
+            float openY = (float)(plotBottom - ((open-min)/span) * (plotBottom-plotTop));
+            float closeY = (float)(plotBottom - ((close-min)/span) * (plotBottom-plotTop));
+            boolean up = close >= open;
+
+            Paint candle = new Paint(Paint.ANTI_ALIAS_FLAG);
+            candle.setColor(up ? Color.rgb(47,125,106) : Color.rgb(184,91,91));
+            candle.setStrokeWidth(3);
+            canvas.drawLine(cx, highY, cx, lowY, candle);
+            float top = Math.min(openY, closeY);
+            float bottom = Math.max(openY, closeY);
+            canvas.drawRect(cx-bodyW/2f, top, cx+bodyW/2f, Math.max(top+4,bottom), candle);
         }
     }
 
