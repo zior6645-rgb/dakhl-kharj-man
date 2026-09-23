@@ -1,8 +1,43 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
+type PdfTransaction = {
+  date:string;
+  time:string;
+  type:string;
+  title:string;
+  category:string;
+  amount:string;
+  description:string;
+};
+
+type PdfReport = {
+  title:string;
+  subtitle:string;
+  exportedAt:string;
+  summaryTitle:string;
+  emptyText:string;
+  dateLabel:string;
+  timeLabel:string;
+  typeLabel:string;
+  categoryLabel:string;
+  descriptionLabel:string;
+  summaries:Array<{
+    currency:string;
+    currencyLabel:string;
+    income:string;
+    expense:string;
+    balance:string;
+    incomeLabel:string;
+    expenseLabel:string;
+    balanceLabel:string;
+  }>;
+  transactions:PdfTransaction[];
+};
+
 type FileSaverPlugin = {
-  saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; path:string }>;
+  saveFile(options: { filename:string; mimeType:string; data:string }): Promise<{ uri:string; path:string; saved:boolean }>;
+  savePdf(options: { filename:string; report:PdfReport }): Promise<{ uri:string; saved:boolean }>;
 };
 
 const FileSaver = registerPlugin<FileSaverPlugin>('FileSaver');
@@ -445,6 +480,72 @@ export default function App() {
     }
   }
 
+  async function exportPdf() {
+    if (txs.length === 0) {
+      say(t(lang,'pdfNoTransactions'));
+      return;
+    }
+
+    const currencies=[...new Set(txs.map(x => x.currency))];
+    const summaries=currencies.map(currency => {
+      const totals=calcTotals(txs,currency);
+      return {
+        currency,
+        currencyLabel:CURRENCY_MAP[currency].names[lang] + ' (' + currency + ')',
+        income:fmtMoney(totals.income,currency,locale),
+        expense:fmtMoney(totals.expense,currency,locale),
+        balance:fmtMoney(totals.balance,currency,locale),
+        incomeLabel:t(lang,'income'),
+        expenseLabel:t(lang,'expense'),
+        balanceLabel:t(lang,'currentBalance')
+      };
+    });
+
+    const report:PdfReport={
+      title:t(lang,'pdfReportTitle'),
+      subtitle:fmtNum(txs.length,locale) + ' ' + t(lang,'transactions'),
+      exportedAt:new Date().toLocaleString(locale),
+      summaryTitle:t(lang,'pdfSummary'),
+      emptyText:t(lang,'noTransactions'),
+      dateLabel:t(lang,'pdfDate'),
+      timeLabel:t(lang,'pdfTime'),
+      typeLabel:t(lang,'pdfType'),
+      categoryLabel:t(lang,'pdfCategory'),
+      descriptionLabel:t(lang,'pdfDescription'),
+      summaries,
+      transactions:[...txs]
+        .sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))
+        .map(x => ({
+          date:displayDate(x.date,locale),
+          time:x.time,
+          type:x.type==='income' ? t(lang,'income') : t(lang,'expense'),
+          title:x.title,
+          category:categoryName(x.category),
+          amount:(x.type==='income' ? '+ ' : '- ') + fmtMoney(x.amount,x.currency,locale),
+          description:x.description || ''
+        }))
+    };
+
+    try {
+      if (Capacitor.getPlatform() === 'android') {
+        await FileSaver.savePdf({
+          filename:'cashio-financial-report.pdf',
+          report
+        });
+        say(t(lang,'pdfReady'));
+        return;
+      }
+
+      const oldTitle=document.title;
+      document.title=report.title;
+      window.print();
+      window.setTimeout(() => { document.title=oldTitle; },1000);
+      say(t(lang,'pdfPrintHint'));
+    } catch {
+      say(t(lang,'pdfExportFailed'));
+    }
+  }
+
   async function exportJSON() {
     const payload={version:2,exportedAt:nowISO(),settings,categories:cats,transactions:txs};
     await deliverFile('dakhl-kharj-backup-v2.json',JSON.stringify(payload,null,2),'application/json','backupReady');
@@ -483,20 +584,21 @@ export default function App() {
         const rows=parseCSV(text);
         if (rows.length < 2) { say(t(lang,'invalidFileKeepData')); return; }
 
-        const headers=rows[0].map(h => h.trim().toLocaleLowerCase());
+        const normalizeHeader=(value:string) => value.trim().toLocaleLowerCase().replace(/[\s_\-\u200c\u200d]+/g,'');
+        const headers=rows[0].map(normalizeHeader);
         const index=(...names:string[]) => names.map(n => headers.indexOf(n)).find(i => i >= 0) ?? -1;
-        const iId=index('id');
-        const iType=index('type');
-        const iAmount=index('amount');
-        const iCurrency=index('currency');
-        const iTitle=index('title');
-        const iCategoryId=index('categoryid','category_id');
-        const iCategory=index('category');
-        const iDate=index('date');
-        const iTime=index('time');
-        const iDescription=index('description');
-        const iCreated=index('createdat','created_at');
-        const iUpdated=index('updatedat','updated_at');
+        const iId=index('id','شناسه');
+        const iType=index('type','نوع','نوعتراکنش');
+        const iAmount=index('amount','مبلغ');
+        const iCurrency=index('currency','ارز','واحدپول');
+        const iTitle=index('title','عنوان');
+        const iCategoryId=index('categoryid','شناسهدسته');
+        const iCategory=index('category','دسته','دسته بندی','دسته‌بندی');
+        const iDate=index('date','تاریخ');
+        const iTime=index('time','ساعت');
+        const iDescription=index('description','توضیحات','توضیح');
+        const iCreated=index('createdat','تاریخایجاد');
+        const iUpdated=index('updatedat','تاریخبروزرسانی');
 
         if ([iType,iAmount,iTitle,iCategory,iDate,iTime].some(i => i < 0)) {
           say(t(lang,'invalidFileKeepData'));
@@ -898,7 +1000,7 @@ export default function App() {
 
         <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'backupRestore')}</h3>
-          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={() => fileRef.current?.click()}>{t(lang,'importFile')}</button></div>
+          <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={exportPdf}>{t(lang,'exportPdf')}</button><button className="btn ghost" onClick={() => fileRef.current?.click()}>{t(lang,'importFile')}</button></div>
           <input ref={fileRef} type="file" accept="application/json,.json,text/csv,.csv" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
           <div className="currency-note">{t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
         </div>

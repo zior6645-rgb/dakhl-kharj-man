@@ -91,7 +91,15 @@ assert(fileSaver.includes('Intent.CATEGORY_OPENABLE'), 'native saver requests a 
 assert(fileSaver.includes('startActivityForResult(call, intent, SAVE_CALLBACK)'), 'native saver returns through a Capacitor activity callback');
 assert(fileSaver.includes('@ActivityCallback'), 'native saver handles the Android activity result');
 assert(fileSaver.includes('openOutputStream(uri)'), 'native saver writes to the location selected by the user');
-assert(androidBuild.includes('versionCode 11'), 'Android build code is incremented for CSV restore support');
+assert(app.includes('exportPdf'), 'PDF export function exists');
+assert(app.includes('FileSaver.savePdf'), 'Android PDF export uses native FileSaver');
+assert(app.includes('pdfReportTitle'), 'PDF report has a localized title');
+assert(fileSaver.includes('public void savePdf(PluginCall call)'), 'native PDF save method exists');
+assert(fileSaver.includes('application/pdf'), 'native PDF exporter uses PDF MIME type');
+assert(fileSaver.includes('new PdfDocument'), 'native PDF report is generated');
+assert(fileSaver.includes('transactions'), 'native PDF report includes transactions');
+assert(utils.includes('semicolonCount'), 'CSV parser detects semicolon-delimited files');
+assert(androidBuild.includes('versionCode 12'), 'Android build code is incremented for PDF export support');
 assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 
