@@ -584,20 +584,21 @@ export default function App() {
         const rows=parseCSV(text);
         if (rows.length < 2) { say(t(lang,'invalidFileKeepData')); return; }
 
-        const headers=rows[0].map(h => h.trim().toLocaleLowerCase());
+        const normalizeHeader=(value:string) => value.trim().toLocaleLowerCase().replace(/[\s_\-\u200c\u200d]+/g,'');
+        const headers=rows[0].map(normalizeHeader);
         const index=(...names:string[]) => names.map(n => headers.indexOf(n)).find(i => i >= 0) ?? -1;
-        const iId=index('id');
-        const iType=index('type');
-        const iAmount=index('amount');
-        const iCurrency=index('currency');
-        const iTitle=index('title');
-        const iCategoryId=index('categoryid','category_id');
-        const iCategory=index('category');
-        const iDate=index('date');
-        const iTime=index('time');
-        const iDescription=index('description');
-        const iCreated=index('createdat','created_at');
-        const iUpdated=index('updatedat','updated_at');
+        const iId=index('id','شناسه');
+        const iType=index('type','نوع','نوعتراکنش');
+        const iAmount=index('amount','مبلغ');
+        const iCurrency=index('currency','ارز','واحدپول');
+        const iTitle=index('title','عنوان');
+        const iCategoryId=index('categoryid','شناسهدسته');
+        const iCategory=index('category','دسته','دسته بندی','دسته‌بندی');
+        const iDate=index('date','تاریخ');
+        const iTime=index('time','ساعت');
+        const iDescription=index('description','توضیحات','توضیح');
+        const iCreated=index('createdat','تاریخایجاد');
+        const iUpdated=index('updatedat','تاریخبروزرسانی');
 
         if ([iType,iAmount,iTitle,iCategory,iDate,iTime].some(i => i < 0)) {
           say(t(lang,'invalidFileKeepData'));
