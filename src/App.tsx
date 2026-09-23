@@ -595,8 +595,6 @@ export default function App() {
         {label:t(lang,'expenseRatio'),value:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%'},
         {label:t(lang,'averageExpense'),value:fmtMoney(averageExpense,reportCurrency,locale)},
         {label:t(lang,'largestExpense'),value:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'},
-        {label:t(lang,'openingBalance'),value:fmtMoney(openingBalance,reportCurrency,locale)},
-        {label:t(lang,'closingBalance'),value:fmtMoney(closingBalance,reportCurrency,locale)},
       ],
       summaries,
       categoryDistribution:reportExpenseDist.map(x => ({
