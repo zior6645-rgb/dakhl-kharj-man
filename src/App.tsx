@@ -37,6 +37,7 @@ type PdfReport = {
   }>;
   categoryDistribution:Array<{label:string;value:number;percent:number}>;
   trend:Array<{date:string;income:number;expense:number;balance:number}>;
+  candles:Array<{date:string;open:number;high:number;low:number;close:number}>;
   transactions:PdfTransaction[];
 };
 
@@ -389,6 +390,28 @@ export default function App() {
       },[]);
   }, [reportTxs]);
 
+  const cashflowCandles = useMemo(() => {
+    let running=0;
+    const ordered=[...reportTxs].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+    const out:Array<{date:string;open:number;high:number;low:number;close:number}>=[];
+    for (const tx of ordered) {
+      const last=out[out.length-1];
+      if (!last || last.date !== tx.date) {
+        const open=running;
+        const close=open + (tx.type==='income' ? tx.amount : -tx.amount);
+        out.push({date:tx.date,open,high:Math.max(open,close),low:Math.min(open,close),close});
+        running=close;
+      } else {
+        const next=running + (tx.type==='income' ? tx.amount : -tx.amount);
+        last.high=Math.max(last.high,next);
+        last.low=Math.min(last.low,next);
+        last.close=next;
+        running=next;
+      }
+    }
+    return out;
+  }, [reportTxs]);
+
   const lineWidth=680;
   const lineHeight=240;
   const linePadX=40;
@@ -407,6 +430,11 @@ export default function App() {
     const y=lineHeight/2 - (d.balance/balanceMax)*(lineHeight/2-linePadY);
     return x.toFixed(1)+','+y.toFixed(1);
   }).join(' ');
+  const candleMin=Math.min(0,...cashflowCandles.map(x=>x.low));
+  const candleMax=Math.max(0,...cashflowCandles.map(x=>x.high));
+  const candleSpan=Math.max(1,candleMax-candleMin);
+  const candleY=(value:number) => lineHeight-linePadY-((value-candleMin)/candleSpan)*(lineHeight-linePadY*2);
+  const candleStep=cashflowCandles.length<=1 ? lineWidth-80 : (lineWidth-linePadX*2)/cashflowCandles.length;
   const categoryStops=(() => {
     if(!reportExpenseDist.length) return 'transparent';
     let cursor=0;
@@ -608,6 +636,7 @@ export default function App() {
         percent:reportTotals.expense ? (x.total/reportTotals.expense)*100 : 0
       })),
       trend:balanceSeries.map(x => ({date:x.date,income:x.income,expense:x.expense,balance:x.balance})),
+      candles:cashflowCandles,
       transactions:[...txs]
         .sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))
         .map(x => ({
@@ -1145,6 +1174,25 @@ export default function App() {
                   <polyline points={balanceLinePoints} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <div className="muted">{t(lang,'monthlyComparison')}</div>
+              </div>
+
+              <div className="card">
+                <h3>{t(lang,'cashflowCandle')}</h3>
+                <svg viewBox="0 0 680 240" role="img" aria-label={t(lang,'cashflowCandle')} style={{width:'100%',height:'auto',overflow:'visible'}}>
+                  <line x1="40" y1="216" x2="640" y2="216" stroke="currentColor" opacity=".18" />
+                  {cashflowCandles.map((c,i) => {
+                    const x=cashflowCandles.length<=1 ? lineWidth/2 : linePadX + i*candleStep + candleStep/2;
+                    const openY=candleY(c.open), closeY=candleY(c.close), highY=candleY(c.high), lowY=candleY(c.low);
+                    const up=c.close>=c.open;
+                    const bodyY=Math.min(openY,closeY);
+                    const bodyH=Math.max(3,Math.abs(closeY-openY));
+                    return <g key={c.date}>
+                      <line x1={x} y1={highY} x2={x} y2={lowY} stroke={up?'#2f7d6a':'#b85b5b'} strokeWidth="3" />
+                      <rect x={x-Math.max(5,candleStep*0.22)} y={bodyY} width={Math.max(10,candleStep*0.44)} height={bodyH} fill={up?'#2f7d6a':'#b85b5b'} opacity=".88" rx="2" />
+                    </g>;
+                  })}
+                </svg>
+                <div className="muted">{t(lang,'cashflowCandleNote')}</div>
               </div>
 
               <div className="card">
