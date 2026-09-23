@@ -1,3 +1,4 @@
+// CSV restore verification
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,7 @@ const v2=JSON.stringify({version:2,transactions:txs.map(x=>({...x,currency:x.cur
 assert(JSON.parse(v2).version===2,'new backup version');
 
 const app=read('src/App.tsx');
+const utils=read('src/utils.ts');
 const types=read('src/types.ts');
 const css=read('src/styles.css');
 const i18n=read('src/i18n.ts');
@@ -65,6 +67,13 @@ assert(app.includes('await FileSaver.saveFile'), 'Android export calls native fi
 assert(app.includes("t(lang,'fileExportFailed')"), 'file export failure is reported instead of claiming success');
 assert(app.includes("await deliverFile('dakhl-kharj-backup-v2.json'"), 'JSON backup uses the file delivery helper');
 assert(app.includes("await deliverFile('dakhl-kharj.csv'"), 'CSV export uses the file delivery helper');
+assert(app.includes("name.endsWith('.csv')"), 'CSV files are accepted for restore');
+assert(app.includes('parseCSV(text)'), 'CSV restore uses the shared CSV parser');
+assert(app.includes('categoryId'), 'CSV restore supports stable category IDs');
+assert(app.includes('accept="application/json,.json,text/csv,.csv"'), 'file picker accepts JSON and CSV');
+assert(utils.includes("categoryId,category"), 'CSV export includes both stable category ID and readable category label');
+assert(utils.includes('export function parseCSV'), 'CSV parser exists');
+assert(utils.includes('Unclosed CSV quote'), 'CSV parser rejects malformed quoted files');
 
 assert(app.includes('categoryName(t.category)'), 'custom category search uses display labels');
 assert(fs.existsSync(path.join(ROOT,'public','manifest.webmanifest')), 'web manifest exists');
@@ -82,7 +91,7 @@ assert(fileSaver.includes('Intent.CATEGORY_OPENABLE'), 'native saver requests a 
 assert(fileSaver.includes('startActivityForResult(call, intent, SAVE_CALLBACK)'), 'native saver returns through a Capacitor activity callback');
 assert(fileSaver.includes('@ActivityCallback'), 'native saver handles the Android activity result');
 assert(fileSaver.includes('openOutputStream(uri)'), 'native saver writes to the location selected by the user');
-assert(androidBuild.includes('versionCode 10'), 'Android build code is incremented for the save-dialog fix');
+assert(androidBuild.includes('versionCode 11'), 'Android build code is incremented for CSV restore support');
 assert(androidBuild.includes('versionName "1.6.0"'), 'visible Android version remains 1.6.0');
 assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs project tests');
 

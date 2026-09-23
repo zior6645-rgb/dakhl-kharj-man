@@ -12,7 +12,7 @@ import { CURRENCIES, CURRENCY_MAP, DEFAULT_CURRENCY } from './currencies';
 import { LANGUAGE_NAMES, RTL_LANGUAGES, categoryLabel, localeForLanguage, t } from './i18n';
 import { calcTotals, filterByDateRange, groupByCategory, groupByDay, groupByMonth, lastNDays, lastNMonths, validateBackup, validateTx } from './finance';
 import { dbBulkPut, dbClear, dbDel, dbGetAll, dbPut } from './db';
-import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, timeStr, todayStr, toCSV, uid } from './utils';
+import { displayDate, fmtMoney, fmtNum, isValidDateString, nowISO, parseAmount, parseCSV, timeStr, todayStr, toCSV, uid } from './utils';
 import { cloudConfigured, ensureCloudSession, fetchCloudData, loadCloudSession, requestPasswordReset, resendSignupCode, signInWithPassword, signOut, signUp, upsertCloudCategory, upsertCloudTransaction, deleteCloudCategory, deleteCloudTransaction, deleteAllCloudData, uploadLocalCategories, uploadLocalTransactions, verifySignupCode, type CloudSession } from './cloud';
 
 const LS_SETTINGS = 'dk-settings-v2';
@@ -451,13 +451,170 @@ export default function App() {
   }
 
   async function exportCSVFile() {
-    const rows=txs.map(x => ({...x, category:categoryName(x.category), currency:x.currency}));
+    const rows=txs.map(x => ({...x, categoryId:x.category, category:categoryName(x.category), currency:x.currency}));
     await deliverFile('dakhl-kharj.csv','\ufeff'+toCSV(rows),'text/csv;charset=utf-8','csvReady');
+  }
+
+  function resolveCsvCategoryId(rawId:string, rawLabel:string, existing:Category[], type:TxType): string {
+    const id = rawId.trim();
+    const label = rawLabel.trim();
+    if (id && existing.some(c => c.id === id)) return id;
+
+    const byLabel = existing.find(c =>
+      c.label.trim().toLocaleLowerCase(locale) === label.toLocaleLowerCase(locale) ||
+      categoryLabel(c.id,c.label,lang).trim().toLocaleLowerCase(locale) === label.toLocaleLowerCase(locale)
+    );
+    if (byLabel) return byLabel.id;
+
+    for (const language of ['fa','en','ru','ar','tr'] as LanguageCode[]) {
+      const match = existing.find(c => categoryLabel(c.id,c.label,language).trim().toLocaleLowerCase() === label.toLocaleLowerCase());
+      if (match) return match.id;
+    }
+
+    return id || 'cat-'+uid();
   }
 
   async function importFile(file:File) {
     try {
-      const obj=JSON.parse(await file.text());
+      const name=file.name.toLocaleLowerCase();
+      const text=await file.text();
+
+      if (name.endsWith('.csv') || file.type.toLocaleLowerCase().includes('csv')) {
+        const rows=parseCSV(text);
+        if (rows.length < 2) { say(t(lang,'invalidFileKeepData')); return; }
+
+        const headers=rows[0].map(h => h.trim().toLocaleLowerCase());
+        const index=(...names:string[]) => names.map(n => headers.indexOf(n)).find(i => i >= 0) ?? -1;
+        const iId=index('id');
+        const iType=index('type');
+        const iAmount=index('amount');
+        const iCurrency=index('currency');
+        const iTitle=index('title');
+        const iCategoryId=index('categoryid','category_id');
+        const iCategory=index('category');
+        const iDate=index('date');
+        const iTime=index('time');
+        const iDescription=index('description');
+        const iCreated=index('createdat','created_at');
+        const iUpdated=index('updatedat','updated_at');
+
+        if ([iType,iAmount,iTitle,iCategory,iDate,iTime].some(i => i < 0)) {
+          say(t(lang,'invalidFileKeepData'));
+          return;
+        }
+
+        const rawRecords=rows.slice(1).map(cols => ({
+          id: iId >= 0 ? cols[iId]?.trim() : '',
+          type: (cols[iType] ?? '').trim().toLocaleLowerCase(),
+          amount: cols[iAmount] ?? '',
+          currency: iCurrency >= 0 ? (cols[iCurrency] ?? '').trim().toUpperCase() : '',
+          title: cols[iTitle] ?? '',
+          categoryId: iCategoryId >= 0 ? (cols[iCategoryId] ?? '') : '',
+          category: cols[iCategory] ?? '',
+          date: (cols[iDate] ?? '').trim(),
+          time: (cols[iTime] ?? '').trim(),
+          description: iDescription >= 0 ? (cols[iDescription] ?? '') : '',
+          createdAt: iCreated >= 0 ? (cols[iCreated] ?? '') : '',
+          updatedAt: iUpdated >= 0 ? (cols[iUpdated] ?? '') : ''
+        }));
+
+        if (rawRecords.some(r => !r.title.trim() || !r.category.trim())) {
+          say(t(lang,'invalidFileKeepData'));
+          return;
+        }
+
+        const categorySpecs=new Map<string,{id:string;label:string;types:Set<TxType>}>();
+        const existingCats=loadCategories();
+        for (const row of rawRecords) {
+          const type:TxType | null = row.type === 'income' || row.type === 'expense'
+            ? row.type
+            : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : null);
+          if (!type) return null;
+          const id=resolveCsvCategoryId(row.categoryId,row.category,existingCats,type);
+          if (!existingCats.some(c => c.id === id)) {
+            const spec=categorySpecs.get(id) ?? {id,label:row.category.trim(),types:new Set<TxType>()};
+            spec.types.add(type);
+            if (!spec.label) spec.label=row.category.trim();
+            categorySpecs.set(id,spec);
+          }
+        }
+
+        const csvCustom:Category[]=[];
+        for (const spec of categorySpecs.values()) {
+          if (!DEFAULT_CATS.some(c => c.id === spec.id)) {
+            csvCustom.push({
+              id:spec.id,
+              label:spec.label,
+              kind:spec.types.size > 1 ? 'both' : (spec.types.has('income') ? 'income' : 'expense')
+            });
+          }
+        }
+        const nextCats=[...DEFAULT_CATS,...existingCats.filter(c => !c.system && !DEFAULT_CATS.some(d => d.id===c.id)),...csvCustom.filter(c => !existingCats.some(e => e.id===c.id))] as Category[];
+
+        const ids=new Set<string>();
+        const normalized=rawRecords.map((row,n) => {
+          const type:TxType | null = row.type === 'income' || row.type === 'expense'
+            ? row.type
+            : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : null);
+          if (!type) return null;
+          const currency = row.currency && CURRENCY_MAP[row.currency as CurrencyCode] ? row.currency as CurrencyCode : settings.currency;
+          const amount=parseAmount(row.amount,currency);
+          const id=row.id || 'csv-'+uid();
+          if (!amount || !row.title.trim() || !row.category.trim() || !isValidDateString(row.date) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(row.time) || ids.has(id)) return null;
+          ids.add(id);
+          const categoryId=resolveCsvCategoryId(row.categoryId,row.category,nextCats,type);
+          const tx=normalizeTransaction({
+            id,
+            type,
+            amount,
+            currency,
+            title:row.title,
+            category:categoryId,
+            date:row.date,
+            time:row.time,
+            description:row.description,
+            createdAt:row.createdAt || nowISO(),
+            updatedAt:row.updatedAt || nowISO()
+          },nextCats,settings.currency);
+          return tx;
+        });
+
+        if (normalized.some(x => !x) || !normalized.length) {
+          say(t(lang,'invalidFileKeepData'));
+          return;
+        }
+
+        const sorted=normalized.filter(Boolean) as Transaction[];
+        sorted.sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+        if (settings.storageMode==='cloud' && cloudSession) {
+          try {
+            await uploadLocalCategories(cloudSession,nextCats);
+            await uploadLocalTransactions(cloudSession,sorted);
+            const current=await fetchCloudData(cloudSession);
+            const keepTx=new Set(sorted.map(x=>x.id));
+            const keepCats=new Set(nextCats.filter(c=>!c.system).map(c=>c.id));
+            await Promise.all(current.transactions.filter(x=>!keepTx.has(x.id)).map(x=>deleteCloudTransaction(cloudSession,x.id)));
+            await Promise.all(current.categories.filter(x=>!keepCats.has(x.id)).map(x=>deleteCloudCategory(cloudSession,x.id)));
+            setCats(nextCats);
+            setTxs(sorted);
+            say(t(lang,'restored'));
+            return;
+          } catch {
+            say(t(lang,'cloudSyncFailed'));
+            return;
+          }
+        }
+
+        localStorage.removeItem(LS_WIPED);
+        localStorage.setItem(LS_FALLBACK,JSON.stringify(sorted));
+        setCats(nextCats);
+        setTxs(sorted);
+        try { await dbBulkPut(sorted); } catch { say(t(lang,'localFallback')); return; }
+        say(t(lang,'restored'));
+        return;
+      }
+
+      const obj=JSON.parse(text);
       const err=validateBackup(obj);
       if (err) { say(t(lang,'invalidFileKeepData')); return; }
 
@@ -742,7 +899,7 @@ export default function App() {
         <div className="card" style={{marginTop:10}}>
           <h3>{t(lang,'backupRestore')}</h3>
           <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={() => fileRef.current?.click()}>{t(lang,'importFile')}</button></div>
-          <input ref={fileRef} type="file" accept="application/json,.json" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
+          <input ref={fileRef} type="file" accept="application/json,.json,text/csv,.csv" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
           <div className="currency-note">{t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
         </div>
 
