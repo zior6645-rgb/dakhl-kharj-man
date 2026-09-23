@@ -58,6 +58,26 @@ public class FileSaverPlugin extends Plugin {
         readUri(call, result.getData().getData());
     }
 
+    @Override
+    protected void handleOnNewIntent(android.content.Intent intent) {
+        super.handleOnNewIntent(intent);
+        Uri uri = intent.getData();
+        if (uri == null && intent.getExtras() != null) {
+            Object extra = intent.getExtras().get(Intent.EXTRA_STREAM);
+            if (extra instanceof Uri) uri = (Uri) extra;
+        }
+        String action = intent.getAction();
+        if (uri == null || !(Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action))) return;
+        try {
+            JSObject data = readUriToJson(uri);
+            notifyListeners("fileOpen", data, true);
+            intent.setData(null);
+            intent.removeExtra(Intent.EXTRA_STREAM);
+            intent.setAction(Intent.ACTION_MAIN);
+        } catch (Exception ignored) {
+        }
+    }
+
     @PluginMethod
     public void getPendingFile(PluginCall call) {
         final Intent intent = getActivity().getIntent();
@@ -83,45 +103,49 @@ public class FileSaverPlugin extends Plugin {
         intent.setAction(Intent.ACTION_MAIN);
     }
 
+    private JSObject readUriToJson(Uri uri) throws Exception {
+        android.content.ContentResolver resolver = getContext().getContentResolver();
+        byte[] bytes;
+        try (java.io.InputStream input = resolver.openInputStream(uri);
+             java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
+            if (input == null) throw new IllegalStateException("Could not open the selected file.");
+            byte[] chunk = new byte[8192];
+            int n;
+            while ((n = input.read(chunk)) >= 0) buffer.write(chunk, 0, n);
+            bytes = buffer.toByteArray();
+        }
+
+        String fileName = "imported-file";
+        android.database.Cursor cursor = resolver.query(
+                uri,
+                new String[]{android.provider.OpenableColumns.DISPLAY_NAME},
+                null,
+                null,
+                null
+        );
+        if (cursor != null) {
+            try {
+                if (cursor.moveToFirst()) {
+                    int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (index >= 0 && cursor.getString(index) != null) fileName = cursor.getString(index);
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+
+        JSObject response = new JSObject();
+        response.put("pending", true);
+        response.put("filename", fileName);
+        String mime = resolver.getType(uri);
+        response.put("mimeType", mime == null ? "application/octet-stream" : mime);
+        response.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+        return response;
+    }
+
     private void readUri(PluginCall call, Uri uri) {
         try {
-            android.content.ContentResolver resolver = getContext().getContentResolver();
-            byte[] bytes;
-            try (java.io.InputStream input = resolver.openInputStream(uri);
-                 java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
-                if (input == null) throw new IllegalStateException("Could not open the selected file.");
-                byte[] chunk = new byte[8192];
-                int n;
-                while ((n = input.read(chunk)) >= 0) buffer.write(chunk, 0, n);
-                bytes = buffer.toByteArray();
-            }
-
-            String fileName = "imported-file";
-            android.database.Cursor cursor = resolver.query(
-                    uri,
-                    new String[]{android.provider.OpenableColumns.DISPLAY_NAME},
-                    null,
-                    null,
-                    null
-            );
-            if (cursor != null) {
-                try {
-                    if (cursor.moveToFirst()) {
-                        int index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
-                        if (index >= 0 && cursor.getString(index) != null) fileName = cursor.getString(index);
-                    }
-                } finally {
-                    cursor.close();
-                }
-            }
-
-            JSObject response = new JSObject();
-            response.put("pending", true);
-            response.put("filename", fileName);
-            String mime = resolver.getType(uri);
-            response.put("mimeType", mime == null ? "application/octet-stream" : mime);
-            response.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
-            call.resolve(response);
+            call.resolve(readUriToJson(uri));
         } catch (Exception ex) {
             call.reject("Could not read the selected file.", ex);
         }
