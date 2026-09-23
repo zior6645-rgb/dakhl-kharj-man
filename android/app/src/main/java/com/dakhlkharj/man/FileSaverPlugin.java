@@ -312,25 +312,21 @@ public class FileSaverPlugin extends Plugin {
         String indicatorsTitle = report.optString("indicatorsTitle", "Financial indicators");
         y = drawText(canvas, indicatorsTitle, sectionPaint, margin, y, contentWidth, true) + 16;
 
-        String[][] metrics = new String[][]{
-                {"Savings rate", report.optString("savingsRate", "—")},
-                {"Expense ratio", report.optString("expenseRatio", "—")},
-                {"Average income", report.optString("averageIncome", "—")},
-                {"Average expense", report.optString("averageExpense", "—")},
-                {"Largest expense", report.optString("largestExpense", "—")},
-                {"Average transaction", report.optString("averageTransaction", "—")}
-        };
+        JSONArray indicators = report.optJSONArray("indicators");
+        int indicatorCount = indicators == null ? 0 : indicators.length();
         int metricGap = 14;
         int metricW = (contentWidth - metricGap) / 2;
         int metricH = 92;
-        for (int i = 0; i < metrics.length; i++) {
+        int rows = Math.max(1, (indicatorCount + 1) / 2);
+        for (int i = 0; i < indicatorCount; i++) {
+            JSONObject item = indicators.getJSONObject(i);
             int col = i % 2;
             int row = i / 2;
             int x = margin + col * (metricW + metricGap);
             int cardY = y + row * (metricH + metricGap);
-            drawMetricCard(canvas, metrics[i][0], metrics[i][1], x, cardY, metricW, metricH, bodyPaint, amountPaint);
+            drawMetricCard(canvas, item.optString("label",""), item.optString("value","—"), x, cardY, metricW, metricH, bodyPaint, amountPaint);
         }
-        y += 3 * (metricH + metricGap) + 10;
+        y += rows * (metricH + metricGap) + 10;
 
         JSONArray categories = report.optJSONArray("categoryDistribution");
         JSONArray trend = report.optJSONArray("trend");
