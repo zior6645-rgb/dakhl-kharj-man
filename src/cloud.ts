@@ -18,12 +18,17 @@ async function authFetch(path:string,init:RequestInit={}):Promise<any>{const con
 async function dataFetch(path:string,session:CloudSession,init:RequestInit={}):Promise<any>{const config=getCloudConfig();if(!config)throw new Error('Cloud service is not configured.');const headers=new Headers(init.headers);headers.set('apikey',config.key);headers.set('Authorization','Bearer '+session.accessToken);headers.set('Content-Type','application/json');const response=await fetch(config.url+'/rest/v1/'+path,{...init,headers});return parseResponse(response);}
 async function refreshSession(session:CloudSession):Promise<CloudSession>{const payload=await authFetch('token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:session.refreshToken})});return saveCloudSession(toSession(payload));}
 export async function ensureCloudSession():Promise<CloudSession|null>{const session=loadCloudSession();if(!session)return null;if(session.expiresAt>Date.now()+60000)return session;try{return await refreshSession(session);}catch{clearCloudSession();return null;}}
-export async function signUp(email:string,password:string):Promise<{session:CloudSession|null;confirmationSent:boolean}>{
-  const payload=await authFetch('signup',{method:'POST',body:JSON.stringify({email:email.trim().toLowerCase(),password})});
-  const session=payload?.access_token ? saveCloudSession(toSession(payload)) : null;
-  return {session,confirmationSent:!!payload?.confirmation_sent_at};
+export async function sendSignupCode(email:string):Promise<void>{
+  await authFetch('otp',{method:'POST',body:JSON.stringify({email:email.trim().toLowerCase(),create_user:false})});
 }
-export async function resendSignupCode(email:string):Promise<void>{await authFetch('resend',{method:'POST',body:JSON.stringify({type:'signup',email:email.trim().toLowerCase()})});}
+export async function signUp(email:string,password:string):Promise<{session:CloudSession|null;confirmationSent:boolean}>{
+  const normalized=email.trim().toLowerCase();
+  const payload=await authFetch('signup',{method:'POST',body:JSON.stringify({email:normalized,password})});
+  const session=payload?.access_token ? saveCloudSession(toSession(payload)) : null;
+  if (!session) await sendSignupCode(normalized);
+  return {session,confirmationSent:true};
+}
+export async function resendSignupCode(email:string):Promise<void>{await sendSignupCode(email);}
 export async function verifySignupCode(email:string,token:string):Promise<CloudSession|null>{
   const normalized=email.trim().toLowerCase();
   const clean=token.trim();

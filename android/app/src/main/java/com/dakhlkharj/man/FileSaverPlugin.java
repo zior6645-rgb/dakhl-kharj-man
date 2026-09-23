@@ -404,6 +404,32 @@ public class FileSaverPlugin extends Plugin {
                 drawTrendChart(canvas, trend, margin, y, contentWidth, 235);
                 y += 255;
             }
+            JSONArray movingAverage = report.optJSONArray("movingAverage");
+            JSONArray cashCandles = report.optJSONArray("cashCandles");
+            if (movingAverage != null && movingAverage.length() > 0) {
+                if (y + 275 > pageHeight - margin) {
+                    document.finishPage(page);
+                    pageNumber++;
+                    page = document.startPage(new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create());
+                    canvas = page.getCanvas();
+                    y = margin;
+                }
+                y = drawText(canvas, report.optString("movingAverageTitle", "Cash-flow moving average"), smallPaint, margin, y, contentWidth, true) + 10;
+                drawMovingAverageChart(canvas, movingAverage, margin, y, contentWidth, 220);
+                y += 240;
+            }
+            if (cashCandles != null && cashCandles.length() > 0) {
+                if (y + 275 > pageHeight - margin) {
+                    document.finishPage(page);
+                    pageNumber++;
+                    page = document.startPage(new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create());
+                    canvas = page.getCanvas();
+                    y = margin;
+                }
+                y = drawText(canvas, report.optString("cashCandleTitle", "Cash-flow candles"), smallPaint, margin, y, contentWidth, true) + 10;
+                drawCashCandleChart(canvas, cashCandles, margin, y, contentWidth, 220);
+                y += 240;
+            }
         }
 
         JSONArray transactions = report.optJSONArray("transactions");
@@ -606,6 +632,75 @@ public class FileSaverPlugin extends Plugin {
         canvas.drawPath(incomePath, income);
         canvas.drawPath(expensePath, expense);
         canvas.drawPath(balancePath, balance);
+    }
+
+    private void drawMovingAverageChart(Canvas canvas, JSONArray series, int x, int y, int width, int height) throws Exception {
+        int plotLeft=x+42, plotTop=y+16, plotRight=x+width-18, plotBottom=y+height-30;
+        Paint axis=new Paint(Paint.ANTI_ALIAS_FLAG);
+        axis.setColor(Color.rgb(175,185,181)); axis.setStrokeWidth(2);
+        canvas.drawLine(plotLeft,plotBottom,plotRight,plotBottom,axis);
+        canvas.drawLine(plotLeft,plotTop,plotLeft,plotBottom,axis);
+        double max=1;
+        for(int i=0;i<series.length();i++){
+            JSONObject item=series.getJSONObject(i);
+            max=Math.max(max,item.optDouble("income",0));
+            max=Math.max(max,item.optDouble("expense",0));
+            max=Math.max(max,Math.abs(item.optDouble("net",0)));
+        }
+        Paint income=textPaint(1,Typeface.DEFAULT,Color.rgb(88,111,174));
+        income.setStyle(Paint.Style.STROKE); income.setStrokeWidth(4);
+        Paint expense=textPaint(1,Typeface.DEFAULT,Color.rgb(184,91,91));
+        expense.setStyle(Paint.Style.STROKE); expense.setStrokeWidth(4);
+        Paint net=textPaint(1,Typeface.DEFAULT,Color.rgb(47,125,106));
+        net.setStyle(Paint.Style.STROKE); net.setStrokeWidth(4);
+        android.graphics.Path incomePath=new android.graphics.Path();
+        android.graphics.Path expensePath=new android.graphics.Path();
+        android.graphics.Path netPath=new android.graphics.Path();
+        for(int i=0;i<series.length();i++){
+            JSONObject item=series.getJSONObject(i);
+            float px=series.length()<=1?(plotLeft+plotRight)/2f:plotLeft+(i/(float)(series.length()-1))*(plotRight-plotLeft);
+            float iy=(float)(plotBottom-(item.optDouble("income",0)/max)*(plotBottom-plotTop));
+            float ey=(float)(plotBottom-(item.optDouble("expense",0)/max)*(plotBottom-plotTop));
+            float ny=(float)(plotBottom/2f-(item.optDouble("net",0)/max)*(plotBottom-plotTop)/2f);
+            if(i==0){incomePath.moveTo(px,iy);expensePath.moveTo(px,ey);netPath.moveTo(px,ny);}
+            else{incomePath.lineTo(px,iy);expensePath.lineTo(px,ey);netPath.lineTo(px,ny);}
+        }
+        canvas.drawPath(incomePath,income);
+        canvas.drawPath(expensePath,expense);
+        canvas.drawPath(netPath,net);
+    }
+
+    private void drawCashCandleChart(Canvas canvas, JSONArray candles, int x, int y, int width, int height) throws Exception {
+        int plotLeft=x+42, plotTop=y+16, plotRight=x+width-18, plotBottom=y+height-30;
+        Paint axis=new Paint(Paint.ANTI_ALIAS_FLAG);
+        axis.setColor(Color.rgb(175,185,181)); axis.setStrokeWidth(2);
+        canvas.drawLine(plotLeft,plotBottom,plotRight,plotBottom,axis);
+        double max=1, min=0;
+        for(int i=0;i<candles.length();i++){
+            JSONObject item=candles.getJSONObject(i);
+            max=Math.max(max,item.optDouble("high",0));
+            max=Math.max(max,item.optDouble("open",0));
+            max=Math.max(max,item.optDouble("close",0));
+            min=Math.min(min,item.optDouble("low",0));
+        }
+        double span=Math.max(1,max-min);
+        for(int i=0;i<candles.length();i++){
+            JSONObject item=candles.getJSONObject(i);
+            float px=candles.length()<=1?(plotLeft+plotRight)/2f:plotLeft+(i/(float)(candles.length()-1))*(plotRight-plotLeft);
+            float hy=(float)(plotBottom-((item.optDouble("high",0)-min)/span)*(plotBottom-plotTop));
+            float ly=(float)(plotBottom-((item.optDouble("low",0)-min)/span)*(plotBottom-plotTop));
+            float oy=(float)(plotBottom-((item.optDouble("open",0)-min)/span)*(plotBottom-plotTop));
+            float cy=(float)(plotBottom-((item.optDouble("close",0)-min)/span)*(plotBottom-plotTop));
+            boolean rising=item.optDouble("close",0)>=item.optDouble("open",0);
+            Paint wick=new Paint(Paint.ANTI_ALIAS_FLAG);
+            wick.setColor(Color.rgb(88,111,174)); wick.setStrokeWidth(2);
+            canvas.drawLine(px,hy,px,ly,wick);
+            Paint body=new Paint(Paint.ANTI_ALIAS_FLAG);
+            body.setColor(rising?Color.rgb(47,125,106):Color.rgb(184,91,91));
+            body.setStyle(Paint.Style.FILL);
+            float top=Math.min(oy,cy), bottom=Math.max(oy,cy);
+            canvas.drawRect(px-4,top,px+4,Math.max(top+3,bottom),body);
+        }
     }
 
     private TextPaint textPaint(float size, Typeface typeface, int color) {

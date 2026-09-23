@@ -106,13 +106,22 @@ assert(app.includes('balanceTrend'), 'report UI includes a balance trend chart')
 assert(app.includes('categoryChart'), 'report UI includes a category chart');
 assert(app.includes('savingsRate'), 'report calculations include savings rate');
 assert(app.includes('expenseRatio'), 'report calculations include expense ratio');
+assert(app.includes('averageDailyExpense'), 'report calculates average daily expense');
+assert(app.includes('netFlowVolatility'), 'report calculates net flow volatility');
+assert(app.includes('coverageDays'), 'report calculates expense coverage days');
+assert(app.includes('cashCandleSeries'), 'report builds cash-flow candle series');
+assert(read('src/finance.ts').includes('export function buildCashCandles'), 'finance module builds cash-flow candles');
+assert(read('src/finance.ts').includes('export function movingAverage'), 'finance module provides moving average');
+assert(read('src/finance.ts').includes('export function standardDeviation'), 'finance module provides volatility calculation');
 assert(app.includes('FileSaver.savePdf'), 'PDF export uses native PDF saving');
 assert(fileSaver.includes('new PdfDocument'), 'PDF export creates a native Android PDF');
 assert(fileSaver.includes('drawCategoryChart'), 'PDF includes category chart');
 assert(fileSaver.includes('drawTrendChart'), 'PDF includes trend chart');
+assert(fileSaver.includes('drawCashCandleChart'), 'PDF includes cash-flow candle chart');
+assert(fileSaver.includes('drawMovingAverageChart'), 'PDF includes moving-average chart');
 assert(fileSaver.includes('indicators'), 'PDF includes calculated indicators');
 assert(fileSaver.includes('protected void handleOnNewIntent'), 'FileSaver handles Android new intents');
-assert(androidBuild.includes('versionCode 13'), 'Android build code is incremented for final fixes');
+assert(androidBuild.includes('versionCode 14'), 'Android update code is incremented for this final release');
 assert(app.includes('cloudAuthSetupHint'), 'Cloud setup message explains email and Supabase requirements');
 assert(app.includes('fetchCloudData(session)'), 'Cloud mode validates backend connectivity before enabling');
 
@@ -129,7 +138,9 @@ assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs pro
 
 
 assert(read('src/cloud.ts').includes("type:'email'"), 'Cloud email OTP uses the current email verification type');
-assert(read('src/cloud.ts').includes("type:'signup'"), 'Cloud email verification keeps a signup fallback');
+assert(read('src/cloud.ts').includes("authFetch('signup'"), 'Cloud account creation uses Supabase signup');
+assert(read('src/cloud.ts').includes("authFetch('otp'"), 'Cloud signup explicitly sends email OTP');
+assert(read('src/cloud.ts').includes('create_user:false'), 'Cloud OTP does not create an account during verification');
 assert(fileSaver.includes('extractSharedUri'), 'Android import accepts shared content URIs');
 assert(fileSaver.includes('getClipData'), 'Android import accepts ClipData shares');
 assert(fileSaver.includes('detectMimeType'), 'Android import normalizes generic file MIME types by extension');
@@ -138,7 +149,7 @@ assert(androidManifest.includes('android:mimeType="text/plain"'), 'Android manif
 assert(app.includes("result?.error"), 'Native import errors are surfaced to the user');
 assert(app.includes("result.session"), 'Cloud signup can immediately continue when Supabase returns a session');
 assert(!read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('Home should have a carousel'), 'Final audit no longer requires removed home carousel cards');
-assert(read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('نمودار کندل'), 'Final audit documents why market candles are not used for cashflow data');
+assert(read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('کندل جریان نقدی'), 'Final audit documents why market candles are not used for cashflow data');
 assert(i18n.includes('cloudDataNote'), 'Cloud storage note exists for the cloud mode UI');
 assert(app.includes("settings.storageMode==='cloud' ? t(lang,'cloudDataNote')"), 'Backup note matches the selected storage mode');
 
