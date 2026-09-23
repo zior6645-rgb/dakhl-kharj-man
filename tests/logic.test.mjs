@@ -138,7 +138,7 @@ assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs pro
 
 
 assert(read('src/cloud.ts').includes("type:'email'"), 'Cloud email OTP uses the current email verification type');
-assert(read('src/cloud.ts').includes("type:'signup'"), 'Cloud email verification keeps a signup fallback');
+assert(read('src/cloud.ts').includes("authFetch('signup'"), 'Cloud account creation uses Supabase signup');
 assert(read('src/cloud.ts').includes("authFetch('otp'"), 'Cloud signup explicitly sends email OTP');
 assert(read('src/cloud.ts').includes('create_user:false'), 'Cloud OTP does not create an account during verification');
 assert(fileSaver.includes('extractSharedUri'), 'Android import accepts shared content URIs');
