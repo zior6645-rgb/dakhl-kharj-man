@@ -589,7 +589,21 @@ export default function App() {
       typeLabel:t(lang,'pdfType'),
       categoryLabel:t(lang,'pdfCategory'),
       descriptionLabel:t(lang,'pdfDescription'),
+      indicatorsTitle:t(lang,'financialIndicators'),
+      chartsTitle:t(lang,'reportCharts'),
+      savingsRate:savingsRate === null ? '—' : fmtNum(savingsRate,locale,1) + '%',
+      expenseRatio:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%',
+      averageIncome:fmtMoney(averageIncome,reportCurrency,locale),
+      averageExpense:fmtMoney(averageExpense,reportCurrency,locale),
+      largestExpense:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—',
+      averageTransaction:fmtMoney(averageTransaction,reportCurrency,locale),
       summaries,
+      categoryDistribution:reportExpenseDist.map(x => ({
+        label:categoryName(x.category),
+        value:x.total,
+        percent:reportTotals.expense ? (x.total/reportTotals.expense)*100 : 0
+      })),
+      trend:balanceSeries.map(x => ({date:x.date,income:x.income,expense:x.expense,balance:x.balance})),
       transactions:[...txs]
         .sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time))
         .map(x => ({
