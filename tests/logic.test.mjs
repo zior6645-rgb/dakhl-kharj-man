@@ -130,5 +130,16 @@ assert(releaseWorkflow.includes('Run project tests'), 'release workflow runs pro
 
 assert(read('src/cloud.ts').includes("type:'email'"), 'Cloud email OTP uses the current email verification type');
 assert(read('src/cloud.ts').includes("type:'signup'"), 'Cloud email verification keeps a signup fallback');
+assert(fileSaver.includes('extractSharedUri'), 'Android import accepts shared content URIs');
+assert(fileSaver.includes('getClipData'), 'Android import accepts ClipData shares');
+assert(fileSaver.includes('detectMimeType'), 'Android import normalizes generic file MIME types by extension');
+assert(androidManifest.includes('android:mimeType="application/octet-stream"'), 'Android manifest accepts generic downloaded files');
+assert(androidManifest.includes('android:mimeType="text/plain"'), 'Android manifest accepts text/plain CSV downloads');
+assert(app.includes("result?.error"), 'Native import errors are surfaced to the user');
+assert(app.includes("result.session"), 'Cloud signup can immediately continue when Supabase returns a session');
+assert(!read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('Home should have a carousel'), 'Final audit no longer requires removed home carousel cards');
+assert(read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('نمودار کندل'), 'Final audit documents why market candles are not used for cashflow data');
+assert(i18n.includes('cloudDataNote'), 'Cloud storage note exists for the cloud mode UI');
+assert(app.includes("settings.storageMode==='cloud' ? t(lang,'cloudDataNote')"), 'Backup note matches the selected storage mode');
 
 console.log('ALL LOGIC AND SOURCE-INTEGRITY TESTS PASSED');
