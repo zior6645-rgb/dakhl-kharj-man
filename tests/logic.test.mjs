@@ -149,7 +149,7 @@ assert(androidManifest.includes('android:mimeType="text/plain"'), 'Android manif
 assert(app.includes("result?.error"), 'Native import errors are surfaced to the user');
 assert(app.includes("result.session"), 'Cloud signup can immediately continue when Supabase returns a session');
 assert(!read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('Home should have a carousel'), 'Final audit no longer requires removed home carousel cards');
-assert(read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('نمودار کندل'), 'Final audit documents why market candles are not used for cashflow data');
+assert(read('FINAL_RELEASE_AUDIT_PROMPT.md').includes('کندل جریان نقدی'), 'Final audit documents why market candles are not used for cashflow data');
 assert(i18n.includes('cloudDataNote'), 'Cloud storage note exists for the cloud mode UI');
 assert(app.includes("settings.storageMode==='cloud' ? t(lang,'cloudDataNote')"), 'Backup note matches the selected storage mode');
 
