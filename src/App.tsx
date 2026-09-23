@@ -1164,7 +1164,10 @@ export default function App() {
               <button className="btn ghost" onClick={() => void cloudLogout()}>{t(lang,'cloudLogout')}</button>
             </div>
           </> : settings.storageMode==='cloud' ? <div className="currency-note">{t(lang,'cloudModeRequiresAccount')}</div> : null}
-          {!cloudConfigured() && <div className="currency-note">{t(lang,'cloudConfigureHint')}</div>}
+          {!cloudConfigured() && <>
+            <div className="err">{t(lang,'cloudConfigureHint')}</div>
+            <div className="currency-note">{t(lang,'cloudAuthSetupHint')}</div>
+          </>}
         </div>
 
         <div className="card" style={{marginTop:10}}>
