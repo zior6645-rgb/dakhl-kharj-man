@@ -371,33 +371,20 @@ export default function App() {
   const incomeTransactions = useMemo(() => reportTxs.filter(x => x.type==='income'), [reportTxs]);
   const savingsRate = reportTotals.income > 0 ? (reportTotals.balance / reportTotals.income) * 100 : null;
   const expenseRatio = reportTotals.income > 0 ? (reportTotals.expense / reportTotals.income) * 100 : null;
-  const averageIncome = incomeTransactions.length ? reportTotals.income / incomeTransactions.length : 0;
   const averageExpense = expenseTransactions.length ? reportTotals.expense / expenseTransactions.length : 0;
-  const averageTransaction = reportTotals.count ? (reportTotals.income + reportTotals.expense) / reportTotals.count : 0;
   const largestExpenseTx = expenseTransactions.reduce<Transaction | null>((max,x) => !max || x.amount > max.amount ? x : max, null);
-  const reportStart = new Date(pr.from + 'T12:00:00');
-  const reportEnd = new Date(pr.to + 'T12:00:00');
-  const reportCalendarDays = Math.max(1, Math.round((reportEnd.getTime()-reportStart.getTime())/86400000)+1);
-  const averageDailyExpense = reportTotals.expense / reportCalendarDays;
+  const openingBalance = useMemo(() => txs.reduce((sum,x) => {
+    if (x.currency !== reportCurrency || x.date >= pr.from) return sum;
+    return sum + (x.type === 'income' ? x.amount : -x.amount);
+  },0), [txs,pr.from,reportCurrency]);
+  const closingBalance = openingBalance + reportTotals.balance;
   const balanceSeries = useMemo(() => {
-    let balance=0;
-    return [...reportTxs]
-      .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
-      .reduce<Array<{date:string;income:number;expense:number;balance:number}>>((acc,x) => {
-        const last=acc[acc.length-1];
-        const income=x.type==='income' ? x.amount : 0;
-        const expense=x.type==='expense' ? x.amount : 0;
-        balance += income-expense;
-        if(last && last.date===x.date) {
-          last.income += income;
-          last.expense += expense;
-          last.balance = balance;
-        } else {
-          acc.push({date:x.date,income,expense,balance});
-        }
-        return acc;
-      },[]);
-  }, [reportTxs]);
+    let balance=openingBalance;
+    return repTrend.map(d => {
+      balance += d.income-d.expense;
+      return {...d,balance};
+    });
+  }, [repTrend,openingBalance]);
 
   const lineWidth=680;
   const lineHeight=240;
@@ -411,12 +398,15 @@ export default function App() {
   }).join(' ');
   const incomeLinePoints=makeLinePoints(repTrend,'income');
   const expenseLinePoints=makeLinePoints(repTrend,'expense');
-  const balanceMax=Math.max(1,...balanceSeries.map(x=>Math.abs(x.balance)));
+  const balanceMin=Math.min(0,...balanceSeries.map(x=>x.balance));
+  const balanceMaxValue=Math.max(0,...balanceSeries.map(x=>x.balance));
+  const balanceRange=Math.max(1,balanceMaxValue-balanceMin);
   const balanceLinePoints=balanceSeries.map((d,i) => {
     const x=balanceSeries.length<=1 ? lineWidth/2 : linePadX + (i/(balanceSeries.length-1))*(lineWidth-linePadX*2);
-    const y=lineHeight/2 - (d.balance/balanceMax)*(lineHeight/2-linePadY);
+    const y=linePadY + ((balanceMaxValue-d.balance)/balanceRange)*(lineHeight-linePadY*2);
     return x.toFixed(1)+','+y.toFixed(1);
   }).join(' ');
+  const balanceZeroY=linePadY + ((balanceMaxValue)/balanceRange)*(lineHeight-linePadY*2);
   const categoryStops=(() => {
     if(!reportExpenseDist.length) return 'transparent';
     let cursor=0;
@@ -606,11 +596,10 @@ export default function App() {
       indicators:[
         {label:t(lang,'savingsRate'),value:savingsRate === null ? '—' : fmtNum(savingsRate,locale,1) + '%'},
         {label:t(lang,'expenseRatio'),value:expenseRatio === null ? '—' : fmtNum(expenseRatio,locale,1) + '%'},
-        {label:t(lang,'averageIncome'),value:fmtMoney(averageIncome,reportCurrency,locale)},
         {label:t(lang,'averageExpense'),value:fmtMoney(averageExpense,reportCurrency,locale)},
         {label:t(lang,'largestExpense'),value:largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'},
-        {label:t(lang,'averageTransaction'),value:fmtMoney(averageTransaction,reportCurrency,locale)},
-        {label:t(lang,'averageDailyExpense'),value:fmtMoney(averageDailyExpense,reportCurrency,locale)},
+        {label:t(lang,'openingBalance'),value:fmtMoney(openingBalance,reportCurrency,locale)},
+        {label:t(lang,'closingBalance'),value:fmtMoney(closingBalance,reportCurrency,locale)},
       ],
       summaries,
       categoryDistribution:reportExpenseDist.map(x => ({
@@ -1110,7 +1099,7 @@ export default function App() {
             <div className="report-kpi-grid">
               <div className="card"><div className="k">{t(lang,'totalIncomeReport')}</div><div className="v in">{fmtMoney(reportTotals.income,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'totalExpenseReport')}</div><div className="v out">{fmtMoney(reportTotals.expense,reportCurrency,locale)}</div></div>
-              <div className="card"><div className="k">{t(lang,'balance')}</div><div className="v bal">{fmtMoney(reportTotals.balance,reportCurrency,locale)}</div></div>
+              <div className="card"><div className="k">{t(lang,'currentBalance')}</div><div className="v bal">{fmtMoney(closingBalance,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'transactionCount')}</div><div className="v">{fmtNum(reportTotals.count,locale)}</div></div>
             </div>
 
@@ -1118,12 +1107,8 @@ export default function App() {
             <div className="report-kpi-grid">
               <div className="card"><div className="k">{t(lang,'savingsRate')}</div><div className="v">{savingsRate===null ? '—' : fmtNum(savingsRate,locale,1)+'%'}</div></div>
               <div className="card"><div className="k">{t(lang,'expenseRatio')}</div><div className="v">{expenseRatio===null ? '—' : fmtNum(expenseRatio,locale,1)+'%'}</div></div>
-              <div className="card"><div className="k">{t(lang,'averageIncome')}</div><div className="v in">{fmtMoney(averageIncome,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'averageExpense')}</div><div className="v out">{fmtMoney(averageExpense,reportCurrency,locale)}</div></div>
               <div className="card"><div className="k">{t(lang,'largestExpense')}</div><div className="v out">{largestExpenseTx ? fmtMoney(largestExpenseTx.amount,largestExpenseTx.currency,locale) : '—'}</div></div>
-              <div className="card"><div className="k">{t(lang,'averageTransaction')}</div><div className="v">{fmtMoney(averageTransaction,reportCurrency,locale)}</div></div>
-              <div className="card"><div className="k">{t(lang,'averageDailyExpense')}</div><div className="v out">{fmtMoney(averageDailyExpense,reportCurrency,locale)}</div></div>
-
             </div>
 
             <h3>{t(lang,'reportCharts')}</h3>
@@ -1142,7 +1127,7 @@ export default function App() {
               <div className="card report-chart-card">
                 <h3>{t(lang,'balanceTrend')}</h3>
                 <svg className="report-chart-svg" viewBox="0 0 680 240" role="img" aria-label={t(lang,'balanceTrend')} style={{width:'100%',height:'auto'}}>
-                  <line x1="40" y1="120" x2="640" y2="120" stroke="currentColor" opacity=".18" />
+                  <line x1="40" y1={balanceZeroY} x2="640" y2={balanceZeroY} stroke="currentColor" opacity=".18" />
                   <polyline points={balanceLinePoints} fill="none" stroke="#586fae" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <div className="muted">{t(lang,'monthlyComparison')}</div>
@@ -1161,23 +1146,8 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="card report-chart-card">
-                <h3>{t(lang,'incomeExpenseTrend')}</h3>
-                <div className="bars">
-                  {repTrend.map(d => <div className="bar" key={d.date}>
-                    <div className="col income-bar" style={{height:Math.max(3,(d.income/maxRep)*58)}} />
-                    <div className="col expense-bar" style={{height:Math.max(3,(d.expense/maxRep)*58)}} />
-                    <span className="muted" style={{fontSize:9}}>{d.date.replace('-', '/')}</span>
-                  </div>)}
-                </div>
-              </div>
             </div>
 
-            <h3>{t(lang,'expenseDistribution')}</h3>
-            <div className="card grid">{reportExpenseDist.map(x => <div key={x.category}>
-              <div className="row space"><span>{categoryName(x.category)}</span><b>{fmtMoney(x.total,reportCurrency,locale)}</b></div>
-              <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
-            </div>)}</div>
           </>}
         </section>
       </>}
@@ -1319,7 +1289,7 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
     if (!/^\d{6}$/.test(otp.trim())) { setError(t(lang,'otpInvalid')); return; }
     setBusy(true);
     try {
-      const session=await verifySignupCode(email,otp);
+      const session=await verifySignupCode(email,otp,password);
       if (session) onAuthenticated(session);
       else {
         const signed=await signInWithPassword(email,password);
