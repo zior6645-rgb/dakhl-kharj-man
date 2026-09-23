@@ -526,9 +526,10 @@ export default function App() {
         const categorySpecs=new Map<string,{id:string;label:string;types:Set<TxType>}>();
         const existingCats=loadCategories();
         for (const row of rawRecords) {
-          const type:TxType = row.type === 'income' || row.type === 'expense'
+          const type:TxType | null = row.type === 'income' || row.type === 'expense'
             ? row.type
-            : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : 'expense');
+            : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : null);
+          if (!type) return null;
           const id=resolveCsvCategoryId(row.categoryId,row.category,existingCats,type);
           if (!existingCats.some(c => c.id === id)) {
             const spec=categorySpecs.get(id) ?? {id,label:row.category.trim(),types:new Set<TxType>()};
@@ -552,9 +553,9 @@ export default function App() {
 
         const ids=new Set<string>();
         const normalized=rawRecords.map((row,n) => {
-          const type:TxType = row.type === 'income' || row.type === 'expense'
+          const type:TxType | null = row.type === 'income' || row.type === 'expense'
             ? row.type
-            : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : 'expense');
+            : (row.type === 'درآمد' || row.type === 'دخل' ? 'income' : row.type === 'هزینه' || row.type === 'مصروف' ? 'expense' : null);
           const currency = row.currency && CURRENCY_MAP[row.currency as CurrencyCode] ? row.currency as CurrencyCode : settings.currency;
           const amount=parseAmount(row.amount,currency);
           const id=row.id || 'csv-'+uid();
