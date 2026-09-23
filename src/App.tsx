@@ -9,6 +9,11 @@ type PdfTransaction = {
   category:string;
   amount:string;
   description:string;
+  dateLabel?:string;
+  timeLabel?:string;
+  typeLabel?:string;
+  categoryLabel?:string;
+  descriptionLabel?:string;
 };
 
 type PdfReport = {
@@ -45,6 +50,7 @@ type NativeImportResult = {
   filename?: string;
   mimeType?: string;
   data?: string;
+  error?: string;
 };
 
 type FileSaverPlugin = {
@@ -393,7 +399,7 @@ export default function App() {
   const lineHeight=240;
   const linePadX=40;
   const linePadY=24;
-  const lineMax=Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]),...balanceSeries.map(x=>Math.abs(x.balance)));
+  const lineMax=Math.max(1,...repTrend.flatMap(x => [x.income,x.expense]));
   const makeLinePoints=(data:Array<{income:number;expense:number}>,key:'income'|'expense') => data.map((d,i) => {
     const x=data.length<=1 ? lineWidth/2 : linePadX + (i/(data.length-1))*(lineWidth-linePadX*2);
     const y=lineHeight-linePadY-(d[key]/lineMax)*(lineHeight-linePadY*2);
@@ -617,7 +623,12 @@ export default function App() {
           title:x.title,
           category:categoryName(x.category),
           amount:(x.type==='income' ? '+ ' : '- ') + fmtMoney(x.amount,x.currency,locale),
-          description:x.description || ''
+          description:x.description || '',
+          dateLabel:t(lang,'pdfDate'),
+          timeLabel:t(lang,'pdfTime'),
+          typeLabel:t(lang,'pdfType'),
+          categoryLabel:t(lang,'pdfCategory'),
+          descriptionLabel:t(lang,'pdfDescription')
         }))
     };
 
@@ -876,8 +887,22 @@ export default function App() {
   }
 
   async function importNativeResult(result:NativeImportResult) {
-    if(!result?.data || !result.filename) return false;
-    const mime=result.mimeType || (result.filename.toLowerCase().endsWith('.csv') ? 'text/csv' : 'application/json');
+    if (result?.error) {
+      say(result.error);
+      return false;
+    }
+    if(!result?.data || !result.filename) {
+      say(t(lang,'invalidFileKeepData'));
+      return false;
+    }
+    const lower=result.filename.toLocaleLowerCase();
+    const looksCsv=lower.endsWith('.csv') || (result.mimeType || '').toLocaleLowerCase().includes('csv');
+    const looksJson=lower.endsWith('.json') || (result.mimeType || '').toLocaleLowerCase().includes('json');
+    if (!looksCsv && !looksJson) {
+      say(t(lang,'invalidFileKeepData'));
+      return false;
+    }
+    const mime=looksCsv ? 'text/csv' : 'application/json';
     await importFile(base64ToFile(result.data,result.filename,mime));
     return true;
   }
@@ -1198,7 +1223,7 @@ export default function App() {
           <h3>{t(lang,'backupRestore')}</h3>
           <div className="row"><button className="btn" onClick={exportJSON}>{t(lang,'downloadBackup')}</button><button className="btn ghost" onClick={exportCSVFile}>{t(lang,'exportCsv')}</button><button className="btn ghost" onClick={exportPdf}>{t(lang,'exportPdf')}</button><button className="btn ghost" onClick={() => void handleImportClick()}>{t(lang,'importFile')}</button></div>
           <input ref={fileRef} type="file" accept="application/json,.json,text/csv,.csv" style={{display:'none'}} onChange={e => { const f=e.target.files?.[0]; if(f) void importFile(f); e.target.value=''; }} />
-          <div className="currency-note">{t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
+          <div className="currency-note">{settings.storageMode==='cloud' ? t(lang,'cloudDataNote') : t(lang,'privacyLocalOnly')} {t(lang,'dataIntegrityNote')}</div>
         </div>
 
         <div className="card" style={{marginTop:10}}>
