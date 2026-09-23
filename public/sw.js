@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cashio-1.6.0';
+const CACHE_NAME = 'cashio-1.6.0-r2';
 const APP_SHELL = ['./', './index.html', './icon.svg', './manifest.webmanifest'];
 
 self.addEventListener('install', event => {
