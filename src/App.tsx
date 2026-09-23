@@ -1289,7 +1289,7 @@ function CloudAuthModal({lang,onClose,onAuthenticated}:{lang:LanguageCode;onClos
     if (!/^\d{6}$/.test(otp.trim())) { setError(t(lang,'otpInvalid')); return; }
     setBusy(true);
     try {
-      const session=await verifySignupCode(email,otp,password);
+      const session=await verifySignupCode(email,otp);
       if (session) onAuthenticated(session);
       else {
         const signed=await signInWithPassword(email,password);
