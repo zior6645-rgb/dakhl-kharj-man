@@ -1236,8 +1236,8 @@ export default function App() {
               <div className="hbar"><i style={{width:Math.round((x.total/maxDist)*100)+'%'}} /></div>
             </div>)}</div>
           </>}
-      </>}
         </section>
+      </>}
 
       {tab==='settings' && <>
         <h2>{t(lang,'settings')}</h2>
