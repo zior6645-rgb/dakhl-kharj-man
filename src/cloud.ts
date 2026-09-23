@@ -25,8 +25,7 @@ export async function signUp(email:string,password:string):Promise<{session:Clou
   const normalized=email.trim().toLowerCase();
   const payload=await authFetch('signup',{method:'POST',body:JSON.stringify({email:normalized,password})});
   const session=payload?.access_token ? saveCloudSession(toSession(payload)) : null;
-  if (!session) await sendSignupCode(normalized);
-  return {session,confirmationSent:true};
+  return {session,confirmationSent:!session};
 }
 export async function resendSignupCode(email:string):Promise<void>{await sendSignupCode(email);}
 export async function verifySignupCode(email:string,token:string):Promise<CloudSession|null>{
